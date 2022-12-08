@@ -11,11 +11,11 @@ import matplotlib.pyplot as plt
 os.environ['PYOPENCL_COMPILER_OUTPUT'] = '1'
 os.environ['PYOPENCL_NO_CACHE'] = '1'
 
-work_dir = '13_10_22'
+work_dir = '05_12_22'
 
 SHAPE = (256, 256, 256)
-STEPS = 1000
-RW_DELETIMER = 10
+STEPS = 10
+RW_DELETIMER = 1
 
 scalar_shape = SHAPE
 vec_shape = (3,) + SHAPE
@@ -45,7 +45,7 @@ def write_values(step):
     dset[:] = rho.reshape(scalar_shape)
 
 
-def main():
+def main(start_step = 0):
 
   print('load program from cl source file')
   with open(Path('./c_sources/source.cl'), 'r') as file:
@@ -54,9 +54,10 @@ def main():
   print('create context ...')
   platforms = cl.get_platforms()
   print('Platforms: ', platforms)
+  input()
   ctx = cl.Context(
     dev_type=cl.device_type.ALL,
-    properties=[(cl.context_properties.PLATFORM, platforms[0])])
+    properties=[(cl.context_properties.PLATFORM, platforms[1])])
 
   print('create command queue ...')
   queue = cl.CommandQueue(ctx)
@@ -80,6 +81,7 @@ def main():
   knl_init = prg.orzang_tang
   knl_solve = prg.solve_system
 
+# if start_step == 0:
   evt = knl_init(queue, scalar_shape, None, u_buff, B_buff, rho_buff)
   evt.wait()
 
@@ -91,9 +93,10 @@ def main():
 
   print('execute kernel programs\n')
 
-  for i in range(0, STEPS):
+  for i in range(start_step, start_step + STEPS):
     print(f"Step: {i}")
-    if i % RW_DELETIMER == 0:
+    if i == start_step:
+      print(f'Reading step_{i} file:')
       read_values(i)
 
       cl.enqueue_copy(queue, rho_buff, rho)
@@ -109,6 +112,7 @@ def main():
     cl.enqueue_copy(queue, B_buff, new_B)
 
     if (i+1) % RW_DELETIMER == 0:
+      print(f'Writing step_{i+1} file:')
       cl.enqueue_copy(queue, rho, new_rho)
       cl.enqueue_copy(queue, u, new_u)
       cl.enqueue_copy(queue, B, new_B)
@@ -121,7 +125,9 @@ def compute_kinetic_energy(start_step, end_step):
     x = list(range(start_step//RW_DELETIMER,end_step//RW_DELETIMER))
     for i in x:
         read_values(i*RW_DELETIMER)
-        E[i] = 0.5 * np.sum(u.reshape(vec_shape)[:])
+        E[i] = 0.5 * np.sum(
+          [u.reshape(vec_shape)[i, :]**2/rho.reshape(scalar_shape)[:] for i in range(3)]
+          )
     fig = plt.figure()
     ax = plt.axes()
     X = [i for i in x]
@@ -149,10 +155,10 @@ def sum_ro(start_step, end_step):
     x = list(range(start_step//RW_DELETIMER,end_step//RW_DELETIMER))
     for i in x:
         read_values(i*RW_DELETIMER)
-        E[i] = np.sum([j for j in ro.reshape(scalar_shape)[0, :]])
+        E[i] = np.sum([j for j in rho.reshape(scalar_shape)[0, :]])
     fig = plt.figure()
     ax = plt.axes()
-    X = [i*DELTA_TAU for i in x]
+    X = [i for i in x]
     plt.plot(X, E)
     plt.savefig(Path(f"./{work_dir}/graphs/ro_sum.jpg"))
   
@@ -169,15 +175,6 @@ def sum_quad_u(start_step, end_step):
     plt.plot(X, E)
     plt.savefig(Path(f"./{work_dir}/graphs/sum_quad_u.jpg"))
 
-# main()
-
-# compute_kinetic_energy(0, 220)
-
-# compute_magnetic_energy(0, STEPS)
-
-# sum_ro(0, STEPS)
-
-# sum_quad_u(0, STEPS)
 
 def test():
 
@@ -317,8 +314,6 @@ def test():
   plt.plot(x, div[0, 0, :])
   plt.savefig(Path(f"./{work_dir}/graphs/test_dydz.jpg"))
 
-# test()
-
 def printv(start_step, end_step):
     it = 0
     x = list(range(0, 256))
@@ -326,9 +321,23 @@ def printv(start_step, end_step):
       read_values(i*RW_DELETIMER)
       fig = plt.figure()
       ax = plt.axes()
-      plt.plot(x, u.reshape(vec_shape)[0, :, 0, 0])
-      print(u.reshape(vec_shape)[0, :, 0, 0])
+      plt.plot(x, rho.reshape(scalar_shape)[:, 0, 0])
+      print(rho.reshape(scalar_shape)[:, 0, 0])
       plt.savefig(Path(f"./{work_dir}/graphs/u_x(0, 0)_{i}.jpg"))
 
+# test()
 
-printv(0, 220)
+main(550)
+
+# compute_kinetic_energy(0, 300)
+
+# sum_ro(0, 300)
+
+# compute_magnetic_energy(0, STEPS)
+
+# sum_ro(0, STEPS)
+
+# sum_quad_u(0, STEPS)
+
+
+# printv(0, 220)

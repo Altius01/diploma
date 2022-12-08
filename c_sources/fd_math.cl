@@ -30,9 +30,9 @@
 #define DELTA_TAU 1e-7
 
 MYFLOAT MU = 10.0f;
-MYFLOAT RE = 1.0f;
-MYFLOAT MA = 1.0f;
-MYFLOAT REM = 1.0f;
+MYFLOAT RE = 10.0f;
+MYFLOAT MA = 0.5f;
+MYFLOAT REM = 10.0f;
 MYFLOAT GAMMA = 5/3.0f;
 
 MYFLOAT B_0 = 0.282094f;
@@ -40,8 +40,11 @@ MYFLOAT B_0 = 0.282094f;
 
 __global const MYFLOAT8 cent_first_coef = 
     (MYFLOAT8)(1.0/12.0, -8.0/12.0, 0.0, 8.0/12.0, -1.0/12.0, 0.0, 0.0, 0.0);
+// __global const MYFLOAT8 cent_second_coef = 
+//     (MYFLOAT8) (0.0, 1.0/3, -1.0/3, 0.0, -1.0/3, 1.0/3,0.0, 0.0);
+
 __global const MYFLOAT8 cent_second_coef = 
-    (MYFLOAT8) (0.0, 1.0/3, -1.0/3, 0.0, -1.0/3, 1.0/3,0.0, 0.0);
+    (MYFLOAT8) (0.0, -1.0/12, 16.0/12, 30.0/12, 16.0/12, -1.0/12.0, 0.0, 0.0);
 // __global const MYFLOAT8 cent_cross_coef = 
 //     (MYFLOAT8)(1.0/48.0, -1.0/48.0, -1.0/3.0, 1.0/3.0, 1.0/3.0, -1.0/3.0, -1.0/48.0, 1.0/48.0);
 
