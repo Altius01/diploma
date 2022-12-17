@@ -57,7 +57,7 @@ def main(start_step = 0):
   input()
   ctx = cl.Context(
     dev_type=cl.device_type.ALL,
-    properties=[(cl.context_properties.PLATFORM, platforms[1])])
+    properties=[(cl.context_properties.PLATFORM, platforms[0])])
 
   print('create command queue ...')
   queue = cl.CommandQueue(ctx)
@@ -327,7 +327,7 @@ def printv(start_step, end_step):
 
 # test()
 
-main(550)
+main(5)
 
 # compute_kinetic_energy(0, 300)
 
