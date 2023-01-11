@@ -6,16 +6,19 @@ import time
 import numpy as np
 import pyopencl as cl
 from pathlib import Path
+from datetime import date
 import matplotlib.pyplot as plt
+
+from data_service import DataService
 
 os.environ['PYOPENCL_COMPILER_OUTPUT'] = '1'
 os.environ['PYOPENCL_NO_CACHE'] = '1'
 
-work_dir = '05_12_22'
+work_dir = '13_10_22'#'05_12_22'
 
 SHAPE = (256, 256, 256)
-STEPS = 10
-RW_DELETIMER = 1
+STEPS = 100
+RW_DELETIMER = 10
 
 scalar_shape = SHAPE
 vec_shape = (3,) + SHAPE
@@ -29,14 +32,14 @@ def read_values(step):
   global B 
   global u 
 
-  with h5py.File(Path(f"./{work_dir}/step_{step}.hdf5"), "r") as f:
+  with h5py.File(Path(f"./{work_dir}/data/step_{step}.hdf5"), "r") as f:
     u.reshape(vec_shape)[:] = f['u']
     B.reshape(vec_shape)[:] = f['B']
     rho.reshape(scalar_shape)[:] = f['ro']
 
 
 def write_values(step):
-  with h5py.File(Path(f"./{work_dir}/step_{step}.hdf5"), "w") as f:
+  with h5py.File(Path(f"./{work_dir}/data/step_{step}.hdf5"), "w") as f:
     dset = f.create_dataset("u", vec_shape, dtype=np.float32)
     dset[:] = u.reshape(vec_shape)
     dset = f.create_dataset("B", vec_shape, dtype=np.float32)
@@ -46,6 +49,8 @@ def write_values(step):
 
 
 def main(start_step = 0):
+  global u, B, rho
+  data_service = DataService(date.today(), scalar_shape, vec_shape)
 
   print('load program from cl source file')
   with open(Path('./c_sources/source.cl'), 'r') as file:
@@ -89,7 +94,7 @@ def main(start_step = 0):
   cl.enqueue_copy(queue, u, u_buff)
   cl.enqueue_copy(queue, B, B_buff)
 
-  write_values(0)
+  data_service.save_data(0, (u, B, rho))
 
   print('execute kernel programs\n')
 
@@ -97,7 +102,7 @@ def main(start_step = 0):
     print(f"Step: {i}")
     if i == start_step:
       print(f'Reading step_{i} file:')
-      read_values(i)
+      data_service.read_data(i, (u, B, rho))
 
       cl.enqueue_copy(queue, rho_buff, rho)
       cl.enqueue_copy(queue, u_buff, u)
@@ -116,15 +121,15 @@ def main(start_step = 0):
       cl.enqueue_copy(queue, rho, new_rho)
       cl.enqueue_copy(queue, u, new_u)
       cl.enqueue_copy(queue, B, new_B)
-      write_values(i+1)
+      data_service.save_data(i+1, (u, B, rho))
 
 
 def compute_kinetic_energy(start_step, end_step):
     E = np.zeros((end_step-start_step)//RW_DELETIMER)
     it = 0
     x = list(range(start_step//RW_DELETIMER,end_step//RW_DELETIMER))
-    for i in x:
-        read_values(i*RW_DELETIMER)
+    for i in range(len(E)):
+        read_values(x[i]*RW_DELETIMER)
         E[i] = 0.5 * np.sum(
           [u.reshape(vec_shape)[i, :]**2/rho.reshape(scalar_shape)[:] for i in range(3)]
           )
@@ -133,8 +138,11 @@ def compute_kinetic_energy(start_step, end_step):
     X = [i for i in x]
     print(E)
     print(x)
+    plt.grid()
+    plt.xlabel('Шаг по времени')
+    plt.ylabel('Суммарная кин. энергия')
     plt.plot(X, E)
-    plt.savefig(Path(f"./{work_dir}/graphs/kin_energy.jpg"))
+    plt.savefig(Path(f"./{work_dir}/graphs/kin_energy_{start_step}_to_{end_step}.jpg"))
 
 def compute_magnetic_energy(start_step, end_step):
     E = np.zeros((end_step-start_step)//RW_DELETIMER)
@@ -145,22 +153,25 @@ def compute_magnetic_energy(start_step, end_step):
         E[i] = 0.5 * np.sum([j**2 for j in B.reshape(vec_shape)[0, :]])
     fig = plt.figure()
     ax = plt.axes()
-    X = [i*DELTA_TAU for i in x]
+    X = [i for i in x]
     plt.plot(X, E)
-    plt.savefig(Path(f"./{work_dir}/graphs/mag_energy.jpg"))
+    plt.savefig(Path(f"./{work_dir}/graphs/mag_energy_{start_step}_to_{end_step}.jpg"))
 
 def sum_ro(start_step, end_step):
     E = np.zeros((end_step-start_step)//RW_DELETIMER)
     it = 0
     x = list(range(start_step//RW_DELETIMER,end_step//RW_DELETIMER))
-    for i in x:
-        read_values(i*RW_DELETIMER)
+    for i in range(len(E)):
+        read_values(x[i]*RW_DELETIMER)
         E[i] = np.sum([j for j in rho.reshape(scalar_shape)[0, :]])
     fig = plt.figure()
     ax = plt.axes()
     X = [i for i in x]
+    plt.grid()
+    plt.xlabel('Шаг по времени')
+    plt.ylabel('Суммарная масса системы')
     plt.plot(X, E)
-    plt.savefig(Path(f"./{work_dir}/graphs/ro_sum.jpg"))
+    plt.savefig(Path(f"./{work_dir}/graphs/ro_sum_{start_step}_to_{end_step}.jpg"))
   
 def sum_quad_u(start_step, end_step):
     E = np.zeros((end_step-start_step)//RW_DELETIMER)
@@ -189,14 +200,14 @@ def test():
   res = np.zeros(SHAPE).astype(np.float32)
 
   print('load program from cl source file')
-  with open(Path('./c_sources/fd_math.cl'), 'r') as file:
+  with open(Path('./c_sources/my_math.cl'), 'r') as file:
     data = file.read()
     
   print('create context ...')
   platforms = cl.get_platforms()
   ctx = cl.Context(
     dev_type=cl.device_type.ALL,
-    properties=[(cl.context_properties.PLATFORM, platforms[0])])
+    properties=[(cl.context_properties.PLATFORM, platforms[1])])
 
   print('create command queue ...')
   queue = cl.CommandQueue(ctx)
@@ -325,19 +336,6 @@ def printv(start_step, end_step):
       print(rho.reshape(scalar_shape)[:, 0, 0])
       plt.savefig(Path(f"./{work_dir}/graphs/u_x(0, 0)_{i}.jpg"))
 
-# test()
 
-main(5)
-
-# compute_kinetic_energy(0, 300)
-
-# sum_ro(0, 300)
-
-# compute_magnetic_energy(0, STEPS)
-
-# sum_ro(0, STEPS)
-
-# sum_quad_u(0, STEPS)
-
-
-# printv(0, 220)
+if __name__ == "__main__":
+    main()
