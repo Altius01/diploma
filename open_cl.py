@@ -16,14 +16,14 @@ os.environ['PYOPENCL_CTX'] = '1'
 
 GHOSTS = 3
 
-T_SHAPE = (64, 64, 64)
-SHAPE = (T_SHAPE[0]-2*GHOSTS, T_SHAPE[1]-2*GHOSTS, T_SHAPE[2]-2*GHOSTS)
+T_SHAPE = (128, 128, 128,)
+SHAPE = (T_SHAPE[0]+2*GHOSTS, T_SHAPE[1]+2*GHOSTS, T_SHAPE[2]+2*GHOSTS,)
 FLUX_SHAPE = (T_SHAPE[0]+1, T_SHAPE[1]+1, T_SHAPE[2]+1,)
 
 START_STEP = 0
-steps = 10
+steps = 1000
 T =  steps * 0.5*(1/SHAPE[0])**2
-RW_DELETIMER = 1
+RW_DELETIMER = 100
 
 scalar_shape = SHAPE
 vec_shape = (3,) + SHAPE

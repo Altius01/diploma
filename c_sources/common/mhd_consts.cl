@@ -3,9 +3,9 @@
 
 #define GHOST_CELLS 3
 
-#define Nx 64 + 2*GHOST_CELLS
-#define Ny 64 + 2*GHOST_CELLS
-#define Nz 64 + 2*GHOST_CELLS
+#define Nx 134
+#define Ny 134
+#define Nz 134
 
 #define L 2.0 * M_PI
 
