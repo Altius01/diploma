@@ -1,11 +1,12 @@
 #ifndef MHD_CONSTS
 #define MHD_CONSTS
 
-#define Nx 64
-#define Ny 64
-#define Nz 64
-
 #define GHOST_CELLS 3
+
+#define Nx 64 + 2*GHOST_CELLS
+#define Ny 64 + 2*GHOST_CELLS
+#define Nz 64 + 2*GHOST_CELLS
+
 #define L 2.0 * M_PI
 
 __constant double const hx = L*1.0/(double)(Nx-2*GHOST_CELLS);
