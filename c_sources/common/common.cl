@@ -114,6 +114,10 @@ double dxj_BiBj(int4 i, int4 j, global double *B) {
     return result / (Ma*Ma);
 }
 
+double S_ij(int4 i, int4 j, global double* u) {
+    return 0.5 * (dx_3D(u, get_ax(j), i, get_h(j)) + dx_3D(u, get_ax(i), j, get_h(i)));
+}
+
 double dxj_S_ij(int4 i, int4 j, global double* u) {
     return 0.5 * (ddx_3D(u, get_ax(j), i, get_h(j)) + dxdy_3D(u, get_ax(i), get_ax(j), j, get_h(i), get_h(j)));
 }
@@ -186,5 +190,99 @@ double dxj_rho_uj(int4 i, int4 j, global double *rho, global double *u) {
 }
 
 
+// LES
+double J_ij(int4 i, int4 j, global double* B) {
+    return 0.5*(dx_3D(B, get_ax(j), i, get_h(j)) 
+        - dx_3D(B, get_ax(i), j, get_h(i)));
+}
+
+double dxi_J_jk(int4 i, int4 j, int4 k, global double* B) {
+    return 0.5*(dxdy_3D(B, get_ax(i), get_ax(k), j, get_h(i), get_h(k)) 
+        - dxdy_3D(B, get_ax(i), get_ax(j), k, get_h(i), get_h(j)));
+}
+
+double3 dxj_j(int4 j, global double* B) {
+    double result[3] = {0, 0, 0}; 
+    double3 rotor;
+    int4 idx[3];
+    get_indxs(j, idx);
+
+    for (char k = 0; k < 3; ++k) {
+        for (char l = 0; l < 3; ++l) {
+            for (char m = 0; m < 3; ++m) {
+                result[k] += LEVI_CIVITA[k][l][m] 
+                    * dxdy_3D(B, get_ax(j), char_ax[l], idx[m], get_h(j), char_h[l]);
+            }
+        }
+    }
+
+    rotor.x = result[0];
+    rotor.y = result[1];
+    rotor.z = result[2];
+
+    return rotor;
+}
+
+double dxj_abs_j(int4 j, global double* B) {
+    double3 _j = rot(j, B);
+    double3 dx_j = dxj_j(j, B);
+    double abs_j = sqrt(length(_j));
+
+    return dot(_j, dx_j) / abs_j;
+}
+
+double dxj_tauB_ji(int4 i, int4 j, global double* B) {
+    double result = 0;
+    double3 _j = rot(j, B);
+    double abs_j = sqrt(length(_j));
+
+    result += dxj_abs_j(j, B) * J_ij(i, j, B) + dxi_J_jk(j, j, i, B)*abs_j;
+
+    return -2*D1*SGS_DELTA_QUAD*result;
+}
+
+double abs_S_u(int4 i, global double* u){
+    double result = 0;
+    int4 idx[3];
+    get_indxs(i, idx);
+
+    for (char k = 0; k < 3; ++k) {
+        for (char l = 0; l < 3; ++l) {
+            double _s = S_ij(idx[k], idx[l], u);
+            result += _s*_s;
+        }
+    }
+    return sqrt(2*result);
+}
+
+double dxj_abs_S(int4 i, int4 j, global double* u) {
+    double result = 0;
+    int4 idx[3];
+    get_indxs(i, idx);
+
+    for (char k = 0; k < 3; ++k) {
+        for (char l = 0; l < 3; ++l) {
+            result += S_ij(idx[k], idx[l], u) * dxj_S_ij(i, j, u);
+        }
+    }
+    return 2*result / abs_S_u(i, u);
+}
+
+double dxj_tau_u_ji(int4 i, int4 j, global double* rho, global double* u) {
+    double result = 0;
+    double abs_S = abs_S_u(i, u);
+    result += 2*Y1*SGS_DELTA_QUAD * (
+        dx_3D(rho, get_ax(j), get_sc_idx(i), get_h(j)) * abs_S * abs_S
+        + 2*rho[vec_buffer_idx(get_sc_idx(i))] * abs_S * dxj_abs_S(i, j, u)
+    ) * kron(i, j);
+
+    result += -2*C1*SGS_DELTA_QUAD * (
+        dx_3D(rho, get_ax(j), get_sc_idx(i), get_h(j)) * abs_S * S_ij(i, j, u)
+        + rho[vec_buffer_idx(get_sc_idx(i))] * S_ij(i, j, u) * dxj_abs_S(i, j, u)
+        + rho[vec_buffer_idx(get_sc_idx(i))] * abs_S * dxj_S_ij(i, j, u)
+    ) * anti_kron(i, j);
+
+    return result;
+}
 
 #endif

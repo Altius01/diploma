@@ -3,9 +3,9 @@
 
 #define GHOST_CELLS 3
 
-#define TRUE_Nx 256
-#define TRUE_Ny 256
-#define TRUE_Nz 256
+#define TRUE_Nx 32
+#define TRUE_Ny 32
+#define TRUE_Nz 32
 
 #define Nx (TRUE_Nx + 2*GHOST_CELLS)
 #define Ny (TRUE_Ny + 2*GHOST_CELLS)
@@ -39,6 +39,13 @@ __constant double const h[3] = {hx, hy, hz};
 
 #define mu0  ( (rho0*u0*L)/Re )
 
+#define C1  1e-3
+#define Y1  1e-3
+#define D1  1e-3
+
+#define SGS_DELTA_QUAD   (hx*hx + hy*hy + hz*hz)
+#define SGS_DELTA_ABS   sqrt(hx*hx + hy*hy + hz*hz)
+
 int vec_buffer_idx(int4 i) {
     int ax = i.s0;
     int x = i.s1;
@@ -50,6 +57,10 @@ int vec_buffer_idx(int4 i) {
 
 inline double kron(int4 i, int4 j) {
     return (all(i == j)) ? 1.0 : 0.0;
+} 
+
+inline double anti_kron(int4 i, int4 j) {
+    return (all(i == j)) ? 0.0 : 1.0;
 } 
 
 int4 change_idx_axe(int4 i, char axes) {
