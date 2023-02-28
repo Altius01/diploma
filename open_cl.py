@@ -90,8 +90,8 @@ def initials(rho, p, u, B):
 def main(start_step = 0):
   global u, B_arr, rho, e_kin, e_mag
 
-  # data_service = DataService(str(date.today()) + "test", scalar_shape, vec_shape, rw_energy=config.REWRITE_ENERGY)
-  data_service = DataService("2023-03-02_DNS", scalar_shape, vec_shape, rw_energy=config.REWRITE_ENERGY)
+  data_service = DataService(str(date.today()) + "_LES", scalar_shape, vec_shape, rw_energy=config.REWRITE_ENERGY)
+  # data_service = DataService("2023-02-15" + "test", scalar_shape, vec_shape, rw_energy=config.REWRITE_ENERGY)
 
   timing = Timing()
 
