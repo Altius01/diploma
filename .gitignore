@@ -131,7 +131,7 @@ dmypy.json
 # VS code
 .vscode/
 
-13_10_22/
-05_12_22/
-
 2023*/
+
+# config
+config.json

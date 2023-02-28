@@ -169,6 +169,20 @@ double dx_3D(global double* a, char ax, int4 x, double h) {
     return dot(coefs, stencil);
 }
 
+double dx_mul_3D(int n, char ax, double h, int4* idx, global double** arrs) {
+    double result = 0.0;
+
+    for (int i = 0; i < n; ++i) {
+        double sub_res = 1.0f;
+        for (int j = 0; j < n; ++j) {
+            sub_res *= (i == j) ? dx_3D(arrs[i], ax, idx[i], h) : arrs[j][vec_buffer_idx(idx[j])];
+        }
+        result += sub_res;
+    }
+
+    return result;
+}
+
 double ddx_3D(global double* a, char ax, int4 x, double h) {
     double coefs[5];
 

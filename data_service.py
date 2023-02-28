@@ -3,24 +3,21 @@ import numpy as np
 from pathlib import Path
 
 class DataService:
-    def __init__(self, dir_name, scalar_shape, vec_shape) -> None:
+    rw_energy = True
+    _dirs_to_create = ['data/', 'graphs/rho', 'graphs/B', 'graphs/u', 'energy/',]
+
+    def __init__(self, dir_name, scalar_shape, vec_shape, rw_energy=True) -> None:
         self.dir_name = f"./{dir_name}"
         self.scalar_shape = scalar_shape
         self.vector_shape = vec_shape
+        self.rw_energy = rw_energy
         self._create_dirs()
 
     def _create_dirs(self):
-        if not Path(f"{self.dir_name}/data/").exists():
-            Path(f"{self.dir_name}/data/").mkdir(parents=True, exist_ok=True)
-        if not Path(f"{self.dir_name}/graphs/").exists():
-            Path(f"{self.dir_name}/graphs/").mkdir(parents=True, exist_ok=True)
-
-        if not Path(f"{self.dir_name}/graphs/B").exists():
-            Path(f"{self.dir_name}/graphs/B").mkdir(parents=True, exist_ok=True)
-        if not Path(f"{self.dir_name}/graphs/u").exists():
-            Path(f"{self.dir_name}/graphs/u").mkdir(parents=True, exist_ok=True)
-        if not Path(f"{self.dir_name}/graphs/rho").exists():
-            Path(f"{self.dir_name}/graphs/rho").mkdir(parents=True, exist_ok=True)
+        for dir in self._dirs_to_create:
+            if not (Path(f'{self.dir_name}') / dir).exists():
+                Path(f"{self.dir_name}/data/").mkdir(parents=True, exist_ok=True)
+            
 
     def set_folder_name(self, dir_name):
         self.dir_name = f"./{dir_name}"
@@ -53,7 +50,7 @@ class DataService:
         print("saving energy..")
         path = self.get_or_create_dir("energy/")
 
-        if not Path(path / "e_kin.hdf5").exists():
+        if not Path(path / "e_kin.hdf5").exists() or self.rw_energy:
             with h5py.File(path / "e_kin.hdf5", "w") as f:
                 dset = f.create_dataset("energy", len(args[0]), dtype=np.float64)
                 dset[:] = args[0]

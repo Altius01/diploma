@@ -4,26 +4,29 @@ import os
 import numpy as np
 import pyopencl as cl
 from pathlib import Path
+from timing import Timing
 from datetime import date
 import matplotlib.pyplot as plt
 
+from config import Config
 from data_service import DataService
-from timing import Timing
 
 os.environ['PYOPENCL_COMPILER_OUTPUT'] = '1'
 os.environ['PYOPENCL_NO_CACHE'] = '1'
 os.environ['PYOPENCL_CTX'] = '1'
 
-GHOSTS = 3
+config = Config()
 
-T_SHAPE = (128, 128, 128,)
-SHAPE = (T_SHAPE[0]+2*GHOSTS, T_SHAPE[1]+2*GHOSTS, T_SHAPE[2]+2*GHOSTS,)
+GHOSTS = config.GHOSTS
+
+T_SHAPE = config.T_SHAPE
+SHAPE = config.SHAPE
 FLUX_SHAPE = (T_SHAPE[0]+1, T_SHAPE[1]+1, T_SHAPE[2]+1,)
 
-START_STEP = 0
-steps = 1000
-T =  steps * 0.5*(1/SHAPE[0])**2
-RW_DELETIMER = 100
+START_STEP = config.START_STEP
+steps = config.STEPS
+T =  steps * 0.5*(1/T_SHAPE[0])**2
+RW_DELETIMER = config.RW_DELETIMER
 
 scalar_shape = SHAPE
 vec_shape = (3,) + SHAPE
@@ -77,8 +80,8 @@ def initials(rho, p, u, B):
 def main(start_step = 0):
   global u, B_arr, rho, e_kin, e_mag
 
-  data_service = DataService(str(date.today()), scalar_shape, vec_shape)
-  # data_service = DataService("2023-02-15" + "v2_OT", scalar_shape, vec_shape)
+  data_service = DataService(str(date.today()), scalar_shape, vec_shape, rw_energy=config.REWRITE_ENERGY)
+  # data_service = DataService("2023-02-15" + "test", scalar_shape, vec_shape, rw_energy=config.REWRITE_ENERGY)
 
   timing = Timing()
 
@@ -184,7 +187,7 @@ def main(start_step = 0):
   global steps
   i = start_step
   while t < T:
-    dT = 0.5*(1/SHAPE[0])**2
+    dT = 0.5*(1/T_SHAPE[0])**2
 
     t += dT
     if i == start_step and start_step != 0:
@@ -204,11 +207,11 @@ def main(start_step = 0):
 
     cl.enqueue_copy(queue, dT_buff, deltaT)
 
-    evt = knl_fluxes(queue, FLUX_SHAPE, None, 
-      rho_buff, p_buff, u_buff, B_buff,
-      rho_flux_buff, u_flux_buff, B_flux_buff,
-    )
-    evt.wait()
+    # evt = knl_fluxes(queue, FLUX_SHAPE, None, 
+    #   rho_buff, p_buff, u_buff, B_buff,
+    #   rho_flux_buff, u_flux_buff, B_flux_buff,
+    # )
+    # evt.wait()
 
     evt = knl_solve_0(queue, T_SHAPE, None, 
       dT_buff, rho_buff, p_buff, u_buff, B_buff,
@@ -229,11 +232,11 @@ def main(start_step = 0):
 
     evaluate_ghosts(knl_ghosts, queue, rk2_buff, pk2_buff, uk2_buff, Bk2_buff)
 
-    evt = knl_fluxes(queue, FLUX_SHAPE, None, 
-      rk2_buff, pk2_buff, uk2_buff, Bk2_buff,
-      rho_flux_buff, u_flux_buff, B_flux_buff,
-    )
-    evt.wait()
+    # evt = knl_fluxes(queue, FLUX_SHAPE, None, 
+    #   rk2_buff, pk2_buff, uk2_buff, Bk2_buff,
+    #   rho_flux_buff, u_flux_buff, B_flux_buff,
+    # )
+    # evt.wait()
 
     evt = knl_solve_2(queue, T_SHAPE, None, 
       dT_buff, rho_buff, p_buff, u_buff, B_buff,
