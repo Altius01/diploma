@@ -3,9 +3,9 @@
 
 #define GHOST_CELLS 3
 
-#define TRUE_Nx 32
-#define TRUE_Ny 32
-#define TRUE_Nz 32
+#define TRUE_Nx 64
+#define TRUE_Ny 64
+#define TRUE_Nz 64
 
 #define Nx (TRUE_Nx + 2*GHOST_CELLS)
 #define Ny (TRUE_Ny + 2*GHOST_CELLS)
