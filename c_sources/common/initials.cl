@@ -52,9 +52,9 @@ __kernel void Orszag_Tang_3D_inital(
     p[vec_buffer_idx(index_x)] = 1;
     rho[vec_buffer_idx(index_x)] = 1;
 
-    u[vec_buffer_idx(index_x)] = -1.0*(1 + epsp*sin(hz*z))*sin(hy*y);
-    u[vec_buffer_idx(index_y)]  = (1 + epsp*sin(hz*z))*sin(hx*x);
-    u[vec_buffer_idx(index_z)]  = epsp*sin(hz*z);
+    u[vec_buffer_idx(index_x)] = -1.0*(1 + eps_p*sin(hz*z))*sin(hy*y);
+    u[vec_buffer_idx(index_y)]  = (1 + eps_p*sin(hz*z))*sin(hx*x);
+    u[vec_buffer_idx(index_z)]  = eps_p*sin(hz*z);
 
     B[vec_buffer_idx(index_x)]  = -sin(hy*y);
     B[vec_buffer_idx(index_y)]  = sin(2.0*hx*x);
