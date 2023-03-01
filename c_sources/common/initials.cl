@@ -3,9 +3,27 @@
 
 #include "mhd_consts.cl"
 
+// bool is_not_ghost(int4 i) {
+//     if ((i.s1 >= GHOST_CELLS && i.s1 < Nx-GHOST_CELLS) 
+//         && (i.s2 >= GHOST_CELLS && i.s2 < Ny-GHOST_CELLS) 
+//         && (i.s3 >= GHOST_CELLS && i.s3 < Nz-GHOST_CELLS))
+//         return true;
+//     else
+//         return false;
+// }
+
+// bool is_flux(int4 i) {
+//     if ((i.s1 >= GHOST_CELLS-1 && i.s1 < Nx-GHOST_CELLS) 
+//         && (i.s2 >= GHOST_CELLS-1 && i.s2 < Ny-GHOST_CELLS) 
+//         && (i.s3 >= GHOST_CELLS-1 && i.s3 < Nz-GHOST_CELLS))
+//         return true;
+//     else
+//         return false;
+// }
+
 __kernel void Orszag_Tang_3D_inital(
-    __global double *_rho, __global double *_p, 
-    __global double *_u, __global double *_B
+    __global double *rho, __global double *p, 
+    __global double *u, __global double *B
 ) {
     int x = get_global_id(0); int y = get_global_id(1); int z = get_global_id(2);
     x += GHOST_CELLS;
@@ -20,38 +38,27 @@ __kernel void Orszag_Tang_3D_inital(
     y -= GHOST_CELLS;
     z -= GHOST_CELLS;
 
-    _p[vec_buffer_idx(index_x)] = 5.0/(12.0*M_PI);
-    _rho[vec_buffer_idx(index_x)] = 25.0/(36.0*M_PI);
+    // p[vec_buffer_idx(index_x)] = 5.0/(12.0*M_PI);
+    // rho[vec_buffer_idx(index_x)] = 25.0/(36.0*M_PI);
 
-    // (1 + eps_p*sin(2.0*M_PI*hz*z))
-    _u[vec_buffer_idx(index_x)] = -1.0*(1 + eps_p*sin(hz*z))*u0*sin(hy*y);
-    _u[vec_buffer_idx(index_y)]  = (1 + eps_p*sin(hz*z))*u0*sin(hx*x);
-    _u[vec_buffer_idx(index_z)]  = eps_p*sin(hz*z);
+    // u[vec_buffer_idx(index_x)] = -1.0*(1 + epsp*sin(hz*z))*u0*sin(hy*y);
+    // u[vec_buffer_idx(index_y)]  = (1 + epsp*sin(hz*z))*u0*sin(hx*x);
+    // u[vec_buffer_idx(index_z)]  = epsp*sin(hz*z);
 
-    _B[vec_buffer_idx(index_x)]  = -B0*sin(hy*y);
-    _B[vec_buffer_idx(index_y)]  = B0*sin(2.0*hx*x);
-    _B[vec_buffer_idx(index_z)]  = 0;
+    // B[vec_buffer_idx(index_x)]  = -B0*sin(hy*y);
+    // B[vec_buffer_idx(index_y)]  = B0*sin(2.0*hx*x);
+    // B[vec_buffer_idx(index_z)]  = 0;
 
-    // _B[vec_buffer_idx(index_x)]  = sin(hx*x);
-    // _B[vec_buffer_idx(index_y)]  = 0;
-    // _B[vec_buffer_idx(index_z)]  = 0;
+    p[vec_buffer_idx(index_x)] = 1;
+    rho[vec_buffer_idx(index_x)] = 1;
 
-    // _u[vec_buffer_idx(index_x)] = 0;
-    // _u[vec_buffer_idx(index_y)] = 0;
-    // _u[vec_buffer_idx(index_z)] = 0;
+    u[vec_buffer_idx(index_x)] = -1.0*(1 + epsp*sin(hz*z))*sin(hy*y);
+    u[vec_buffer_idx(index_y)]  = (1 + epsp*sin(hz*z))*sin(hx*x);
+    u[vec_buffer_idx(index_z)]  = epsp*sin(hz*z);
 
-    // _B[vec_buffer_idx(index_x)] = 0;
-    // _B[vec_buffer_idx(index_y)] = 0;
-    // _B[vec_buffer_idx(index_z)] = 0;
-
-    // if (x*hx < 0.5) {
-    //     _p[vec_buffer_idx(index_x)] = 1.0;
-    //     _rho[vec_buffer_idx(index_x)] = 1.0;
-    // }
-    // else {
-    //     _p[vec_buffer_idx(index_x)] = pow(0.125, gamma);
-    //     _rho[vec_buffer_idx(index_x)] = 0.125;
-    // }
+    B[vec_buffer_idx(index_x)]  = -sin(hy*y);
+    B[vec_buffer_idx(index_y)]  = sin(2.0*hx*x);
+    B[vec_buffer_idx(index_z)]  = 0;
 }
 
 __kernel void Tanh_3D_inital(

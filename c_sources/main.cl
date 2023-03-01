@@ -2,6 +2,7 @@
 
 #include "finite_difference\fd_flux_3d.cl"
 #include "finite_volume\weno_fluxes.cl"
+#include "common\initials.cl"
 
 #define RHO( i )    rho[vec_buffer_idx(i)]
 #define RK1( i )    rk1[vec_buffer_idx(i)]
@@ -22,80 +23,6 @@
 #define RHO_F_P( i ) rho_F_P[vec_buffer_idx(i)]
 #define U_F_P( i )   u_F_P[vec_buffer_idx(i)]
 #define B_F_P( i )   b_F_P[vec_buffer_idx(i)]
-
-bool is_not_ghost(int4 i) {
-    if ((i.s1 >= GHOST_CELLS && i.s1 < Nx-GHOST_CELLS) 
-        && (i.s2 >= GHOST_CELLS && i.s2 < Ny-GHOST_CELLS) 
-        && (i.s3 >= GHOST_CELLS && i.s3 < Nz-GHOST_CELLS))
-        return true;
-    else
-        return false;
-}
-
-bool is_flux(int4 i) {
-    if ((i.s1 >= GHOST_CELLS-1 && i.s1 < Nx-GHOST_CELLS) 
-        && (i.s2 >= GHOST_CELLS-1 && i.s2 < Ny-GHOST_CELLS) 
-        && (i.s3 >= GHOST_CELLS-1 && i.s3 < Nz-GHOST_CELLS))
-        return true;
-    else
-        return false;
-}
-
-#include "common\initials.cl"
-
-__kernel void ghost_nodes_periodic(
-    int ax,
-    global double *rho, global double *p, 
-    global double *u, global double *B
-) {
-    int x = get_global_id(0); int y = get_global_id(1); int z = get_global_id(2);
-
-    int sizes[3] = {Nx, Ny, Nz};
-    int axes[3] = {x, y, z};
-    axes[ax] += (axes[ax] > 2) ? sizes[ax] - 2*GHOST_CELLS : 0;
-
-    x = axes[0];
-    y = axes[1];
-    z = axes[2];
-
-    int4 index_x = (int4) {0, x, y, z};
-    int4 index_y = (int4) {1, x, y, z};
-    int4 index_z = (int4) {2, x, y, z};
-
-    int new_x = x;
-    int new_y = y;
-    int new_z = z;
-
-    if (x >= Nx-GHOST_CELLS)
-        new_x -= (Nx - 2*GHOST_CELLS);
-    else if (x < GHOST_CELLS)
-        new_x += (Nx - 2*GHOST_CELLS);
-
-    if (y >= Ny-GHOST_CELLS)
-        new_y -= (Ny - 2*GHOST_CELLS);
-    else if (y < GHOST_CELLS)
-        new_y += (Ny - 2*GHOST_CELLS);
-
-    if (z >= Nz-GHOST_CELLS)
-        new_z -= (Nz - 2*GHOST_CELLS);
-    else if (z < GHOST_CELLS)
-        new_z += (Nz - 2*GHOST_CELLS);
-    
-    int4 new_index_x = (int4) {0, new_x, new_y, new_z};
-    int4 new_index_y = (int4) {1, new_x, new_y, new_z};
-    int4 new_index_z = (int4) {2, new_x, new_y, new_z};
-
-    p[vec_buffer_idx(index_x)] = p[vec_buffer_idx(new_index_x)];
-    rho[vec_buffer_idx(index_x)] = rho[vec_buffer_idx(new_index_x)];
-
-    u[vec_buffer_idx(index_x)] = u[vec_buffer_idx(new_index_x)];
-    u[vec_buffer_idx(index_y)] = u[vec_buffer_idx(new_index_y)];
-    u[vec_buffer_idx(index_z)] = u[vec_buffer_idx(new_index_z)]; 
-
-    B[vec_buffer_idx(index_x)] = B[vec_buffer_idx(new_index_x)];
-    B[vec_buffer_idx(index_y)] = B[vec_buffer_idx(new_index_y)];
-    B[vec_buffer_idx(index_z)] = B[vec_buffer_idx(new_index_z)];
-}
 
 __kernel void compute_fluxes_3D(
     global double *rho, global double *p, 
@@ -195,9 +122,6 @@ __kernel void solver_3D_RK1(
 
     double dT = _dT[0];
 
-    if (!is_not_ghost(index_x))
-        return;
-
     rk2[vec_buffer_idx(index_x)] = (
         0.75*RHO(index_x) + 0.25*RK1(index_x)
         - 0.25*dT * flux_rho(index_x, rk1, uk1)
@@ -247,9 +171,6 @@ __kernel void solver_3D_RK2(
 
     double dT = _dT[0];
 
-    if (!is_not_ghost(index_x))
-        return;
-    
     _rho[vec_buffer_idx(index_x)] = (
         (1.0/3.0)*RHO(index_x) + (2.0/3.0)*RK2(index_x) 
         - (2.0/3.0)*dT * flux_rho(index_x, rk2, uk2)

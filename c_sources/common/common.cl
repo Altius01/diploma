@@ -48,54 +48,13 @@ double dxj_rho_ui_uj(int4 i, int4 j, global double *rho, global double *u) {
     double h;
     h = get_h(j);
 
-    // int4 rho_idx;
-    // rho_idx = get_sc_idx(i);
-
-    // // return 
-    // double ret = dx_3D(rho, xj, rho_idx, h) * u[vec_buffer_idx(i)] * u[vec_buffer_idx(j)] 
-    //     + rho[vec_buffer_idx(rho_idx)] * dx_3D(u, xj, i, h) * u[vec_buffer_idx(j)] 
-    //     + rho[vec_buffer_idx(rho_idx)] * u[vec_buffer_idx(i)] * dx_3D(u, xj, j, h);
-
     int4 idx[3] = {get_sc_idx(i), i, j};
     global double* arrs[3] = {rho, u, u};
 
-    // if (fabs(ret - dx_mul_3D(3, xj, h, idx, arrs)) > pow(get_h(0), 3))
-    //     printf("ERROR: %lf\n", fabs(ret - dx_mul_3D(3, xj, h, idx, arrs)));
     return dx_mul_3D(3, xj, h, idx, arrs);
 }
 
-double dxi_BB(int4 i, global double *B){
-    double result;
-    result = 0.0;
-    for (int l = 0; l < 1; ++l) {
-        int4 k = (int4){l, i.s1, i.s2, i.s3};
-
-        if (all(k == i))
-            result -= dx_3D(B, get_ax(i), i, get_h(i)) * B[vec_buffer_idx(i)];
-        else
-            result += dx_3D(B, get_ax(i), k, get_h(i)) * B[vec_buffer_idx(k)];
-        
-    }
-    return result;
-}
-
 double dxj_BiBj(int4 i, int4 j, global double *B) {
-    // char x;
-    // x = get_ax(j);
-    // double h;
-    // h = get_h(j);
-
-    // double old_result = 0.0; 
-
-    // if (all(i == j)) {
-    //     old_result = dxi_BB(i, B);
-    // } else {
-    //     old_result = - ( dx_3D(B, x, i, h) * B[vec_buffer_idx(j)] 
-    //         + dx_3D(B, x, j, h) * B[vec_buffer_idx(i)] );
-    // }
-
-    // return old_result / (Ma*Ma);
-
     int4 idxs[3];
     get_indxs(i, idxs);
     double result = 0;
@@ -109,8 +68,6 @@ double dxj_BiBj(int4 i, int4 j, global double *B) {
         }
     }
 
-    // if (fabs(old_result - result) > pow(get_h(0), 3))
-    //     printf("ERROR: %lf!\n", fabs(old_result - result));
     return result / (Ma*Ma);
 }
 
@@ -123,22 +80,6 @@ double dxj_S_ij(int4 i, int4 j, global double* u) {
 }
 
 double dxj_sigma_ij(int4 i, int4 j, global double* u){
-    // char xi;
-    // xi = get_ax(i);
-    // double hi;
-    // hi = get_h(i);
-
-    // char xj;
-    // xj = get_ax(j);
-    // double hj;
-    // hj = get_h(j);
-
-    // if (all(i == j)) {
-    //     return (4.0/3.0)*(mu0 / Re)*(ddx_3D(u, xi, i, hi));
-    // } else {
-    //     return (mu0 / Re) * (ddx_3D(u, xj, i, hj) + dxdy_3D(u, xi, xj, j, hi, hj));
-    // }
-
     return (mu0 / Re) * ( 2*dxj_S_ij(i, j, u) - (2.0/3.0)*dxj_S_ij(i, j, u)*kron(i, j) );
 }
 
@@ -172,23 +113,11 @@ double dxj2_B(int4 i, int4 j, global double* B) {
 }
 
 double dxj_rho_uj(int4 i, int4 j, global double *rho, global double *u) {
-    // char xj;
-    // xj = get_ax(j);
-    // double hj;
-    // hj = get_h(j);
-
-    // int4 rho_idx;
-    // rho_idx = get_sc_idx(i);
-
-    // return (dx_3D(rho, xj, rho_idx, hj)*u[vec_buffer_idx(j)] 
-    //     + rho[vec_buffer_idx(rho_idx)]*dx_3D(u, xj, j, hj));
-
     int4 idxs[3] = {get_sc_idx(i), j};
     global double* arrs[3] = {rho, u};
 
     return dx_mul_3D(2, get_ax(j), get_h(j), idxs, arrs);
 }
-
 
 // LES
 double J_ij(int4 i, int4 j, global double* B) {
