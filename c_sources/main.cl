@@ -3,6 +3,7 @@
 #include "finite_difference\fd_flux_3d.cl"
 #include "finite_volume\weno_fluxes.cl"
 #include "common\initials.cl"
+#include "common\ghost_cells.cl"
 
 #define RHO( i )    rho[vec_buffer_idx(i)]
 #define RK1( i )    rk1[vec_buffer_idx(i)]
