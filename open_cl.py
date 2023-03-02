@@ -332,9 +332,9 @@ def compute_kin_energy(knl, ctx, mf, queue, rho_gpu, u_gpu):
     
     cl.enqueue_copy(queue, sums, partialSums)
 
-  print(result, sums[0])
-  assert(np.allclose([result, ], [sums[0], ]))
-  return sums[0]
+  print(result, sums[0, 0, 0])
+  assert(np.allclose([result, ], [sums[0, 0, 0], ]))
+  return sums[0, 0, 0]
 
 
 
