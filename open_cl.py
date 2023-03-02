@@ -141,6 +141,9 @@ def main(start_step = 0):
   knl_fluxes = prg.compute_fluxes_3D
   knl_ghosts = prg.ghost_nodes_periodic
 
+  knl_int_kin = prg.integrate_kinetic
+  knl_int_mag = prg.integrate_magnetic
+
   if start_step == 0:
     timing.add_timestamp('execute init program start')
     print('execute init program start\n')
@@ -167,7 +170,8 @@ def main(start_step = 0):
 
     timing.add_timestamp('compute_kin_energy start')
     print('compute_kin_energy start\n')
-    e_kin[0] = compute_kin_energy()
+    # knl, ctx, mf, queue, rho_gpu, u_gpu
+    e_kin[0] = compute_kin_energy(knl_int_kin, ctx, mf, queue, rho_buff, u_buff)
     timing.add_timestamp('compute_kin_energy end')
     print('compute_kin_energy end\n')
 
@@ -268,7 +272,7 @@ def main(start_step = 0):
       cl.enqueue_copy(queue, u, u_buff)
       cl.enqueue_copy(queue, B_arr, B_buff)
       cl.enqueue_copy(queue, p, p_buff)
-      e_kin = np.append(e_kin, compute_kin_energy())
+      e_kin = np.append(e_kin, compute_kin_energy(knl_int_kin, ctx, mf, queue, rho_buff, u_buff))
       e_mag = np.append(e_mag, compute_mag_energy())
       data_service.save_data(i+1, (u, B_arr, rho, p))
       timing.add_elapsed_time_end("elapsed_writing_time")
@@ -280,7 +284,7 @@ def main(start_step = 0):
     cl.enqueue_copy(queue, u, u_buff)
     cl.enqueue_copy(queue, B_arr, B_buff)
     cl.enqueue_copy(queue, p, p_buff)
-    e_kin = np.append(e_kin, compute_kin_energy())
+    e_kin = np.append(e_kin, compute_kin_energy(knl_int_kin, ctx, mf, queue, rho_buff, u_buff))
     e_mag = np.append(e_mag, compute_mag_energy())
     data_service.save_data(i+1, (u, B_arr, rho, p))
 
@@ -291,14 +295,38 @@ def main(start_step = 0):
     print(timing.elapsed_times, file=f)
 
 
-def compute_kin_energy():
+def compute_kin_energy(knl, ctx, mf, queue, rho_gpu, u_gpu):
   result = 0.0
   for i in range(0, 3):
     for x in range(GHOSTS, SHAPE[2] - GHOSTS):
       for y in range(GHOSTS, SHAPE[2] - GHOSTS):
         for z in range(GHOSTS, SHAPE[2] - GHOSTS):
           result += dV * rho[x, y, z] * u[i, x, y, z]**2
-  return result
+  # return result
+  start_local_shape = (64, 64, 64,)
+  global_size = SHAPE[0]*SHAPE[1]*SHAPE[2]
+  local_shape = start_local_shape
+
+  sums = np.zeros(SHAPE[0] // local_shape[0], 
+                  SHAPE[1] // local_shape[1], 
+                  SHAPE[2] // local_shape[2]).astype(np.float64)
+
+  while global_size//local_size > 1:
+    local_size = local_shape[0]*local_shape[1]*local_shape[2] * 8
+    localSums = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, size=local_size)
+    partialSums = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, size=global_size//local_size)
+
+    evt = knl(queue, (2*GHOSTS, SHAPE[1], SHAPE[2]), None, np.int32(0), 
+              rho_gpu, u_gpu, partialSums, localSums)
+    evt.wait()
+
+    cl.enqueue_copy(queue, sums, partialSums)
+
+  assert(np.allclose([result, ], [sum[0], ]))
+  return sum[0]
+
+
+
 
 
 def compute_mag_energy():
@@ -309,6 +337,8 @@ def compute_mag_energy():
         for z in range(GHOSTS, SHAPE[2] - GHOSTS):
           result += dV * B_arr[i, x, y, z]**2
   return result
+
+
 
 
 def plot_energy(end_step):
