@@ -304,22 +304,32 @@ def compute_kin_energy(knl, ctx, mf, queue, rho_gpu, u_gpu):
           result += dV * rho[x, y, z] * u[i, x, y, z]**2
   # return result
   start_local_shape = (64, 64, 64,)
+  global_shape = SHAPE
   global_size = SHAPE[0]*SHAPE[1]*SHAPE[2]
   local_shape = start_local_shape
 
   sums = np.zeros((SHAPE[0] // local_shape[0], 
                   SHAPE[1] // local_shape[1], 
                   SHAPE[2] // local_shape[2])).astype(np.float64)
+  
+  local_size = local_shape[0]*local_shape[1]*local_shape[2] * 8
 
   while global_size//local_size > 1:
     local_size = local_shape[0]*local_shape[1]*local_shape[2] * 8
     localSums = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, size=local_size)
     partialSums = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, size=global_size//local_size)
 
-    evt = knl(queue, (2*GHOSTS, SHAPE[1], SHAPE[2]), None, np.int32(0), 
+    evt = knl(queue, global_shape, None, np.int32(0), 
               rho_gpu, u_gpu, partialSums, localSums)
+    
+    global_shape = (global_shape[0]//local_shape[0], 
+                    global_shape[1]//local_shape[1], 
+                    global_shape[2]//local_shape[2])
+    
+    global_size = global_size//local_size
     evt.wait()
 
+    
     cl.enqueue_copy(queue, sums, partialSums)
 
   assert(np.allclose([result, ], [sum[0], ]))
