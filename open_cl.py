@@ -307,9 +307,9 @@ def compute_kin_energy(knl, ctx, mf, queue, rho_gpu, u_gpu):
   global_size = SHAPE[0]*SHAPE[1]*SHAPE[2]
   local_shape = start_local_shape
 
-  sums = np.zeros(SHAPE[0] // local_shape[0], 
+  sums = np.zeros((SHAPE[0] // local_shape[0], 
                   SHAPE[1] // local_shape[1], 
-                  SHAPE[2] // local_shape[2]).astype(np.float64)
+                  SHAPE[2] // local_shape[2])).astype(np.float64)
 
   while global_size//local_size > 1:
     local_size = local_shape[0]*local_shape[1]*local_shape[2] * 8
