@@ -4,9 +4,9 @@
 #include "common/mhd_consts.cl"
 
 inline uint global_idx(uint ax, uint x, uint y, uint z) {
-        return ax*global_size_x*global_size_y*global_size_z + 
-        x * global_size_y*global_size_z +
-        y * global_size_z +
+        return ax*get_local_size(0)*get_local_size(1)*get_local_size(2) + 
+        x * get_local_size(1)*get_local_size(2) +
+        y * get_local_size(2)+
         z;
     }
 
