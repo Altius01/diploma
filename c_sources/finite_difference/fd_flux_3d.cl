@@ -79,6 +79,6 @@ double3 j(int4 i, global double* B) {
     return rot(i, B);
 }
 
-double vec_abs(double3 vec) { return sqrt(length(vec)); }
+double vec_abs(double3 vec) { return length(vec); }
 
 #endif
