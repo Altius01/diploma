@@ -59,7 +59,7 @@ __kernel void integrate_kinetic ( __global const double *rho,
                 // Waiting for each 2x2 addition into given workgroup
                 barrier(CLK_LOCAL_MEM_FENCE);
 
-                stride_id = local_idx(stride_x, stride_y, stride_z)
+                uint stride_id = local_idx(stride_x, stride_y, stride_z)
                 // Add elements 2 by 2 between local_id and local_id + stride
                 if (local_x < stride_x && local_y < stride_y && local_z < stride_z)
                     localSums[local_id] += localSums[local_id + stride_id];
@@ -116,7 +116,7 @@ __kernel void integrate_magnetic ( __global const double *B,
                 // Waiting for each 2x2 addition into given workgroup
                 barrier(CLK_LOCAL_MEM_FENCE);
 
-                stride_id = local_idx(stride_x, stride_y, stride_z)
+                uint stride_id = local_idx(stride_x, stride_y, stride_z)
                 // Add elements 2 by 2 between local_id and local_id + stride
                 if (local_x < stride_x && local_y < stride_y && local_z < stride_z)
                     localSums[local_id] += localSums[local_id + stride_id];
