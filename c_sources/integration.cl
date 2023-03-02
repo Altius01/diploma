@@ -69,7 +69,7 @@ __kernel void integrate_kinetic ( __global const double *rho,
 
     // Write result into partialSums[nWorkGroups]
     if (local_id == 0)
-        partialSums[global_idx(get_group_id(0), get_group_id(1), get_group_id(2))] = localSums[0];
+        partialSums[global_idx(0, get_group_id(0), get_group_id(1), get_group_id(2))] = localSums[0];
 }
 
 __kernel void integrate_magnetic ( __global const double *B,
