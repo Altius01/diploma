@@ -84,8 +84,8 @@ def initials(rho, p, u, B):
 
 def main(start_step = 0):
   global u, B_arr, rho, e_kin, e_mag
-
-  data_service = DataService(str(date.today()) + "_LES_v1", scalar_shape, vec_shape, rw_energy=config.REWRITE_ENERGY)
+  # str(date.today())
+  data_service = DataService(str(date.today())+ "_LES_no_model", scalar_shape, vec_shape, rw_energy=config.REWRITE_ENERGY)
   # data_service = DataService("2023-02-15" + "test", scalar_shape, vec_shape, rw_energy=config.REWRITE_ENERGY)
 
   timing = Timing()
@@ -302,39 +302,39 @@ def compute_kin_energy(knl, ctx, mf, queue, rho_gpu, u_gpu):
       for y in range(GHOSTS, SHAPE[2] - GHOSTS):
         for z in range(GHOSTS, SHAPE[2] - GHOSTS):
           result += dV * rho[x, y, z] * u[i, x, y, z]**2
-  # return result
-  start_local_shape = (64, 64, 64,)
-  global_shape = SHAPE
-  global_size = SHAPE[0]*SHAPE[1]*SHAPE[2]
-  local_shape = start_local_shape
+  # # return result
+  # start_local_shape = (64, 64, 64,)
+  # global_shape = SHAPE
+  # global_size = SHAPE[0]*SHAPE[1]*SHAPE[2]
+  # local_shape = start_local_shape
 
-  sums = np.zeros((SHAPE[0] // local_shape[0], 
-                  SHAPE[1] // local_shape[1], 
-                  SHAPE[2] // local_shape[2])).astype(np.float64)
+  # sums = np.zeros((SHAPE[0] // local_shape[0], 
+  #                 SHAPE[1] // local_shape[1], 
+  #                 SHAPE[2] // local_shape[2])).astype(np.float64)
   
-  local_size = local_shape[0]*local_shape[1]*local_shape[2] * 8
+  # local_size = local_shape[0]*local_shape[1]*local_shape[2] * 8
 
-  while global_size//local_size > 1:
-    local_size = local_shape[0]*local_shape[1]*local_shape[2] * 8
-    localSums = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, size=local_size)
-    partialSums = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, size=global_size//local_size)
+  # while global_size//local_size > 1:
+  #   local_size = local_shape[0]*local_shape[1]*local_shape[2] * 8
+  #   localSums = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, size=local_size)
+  #   partialSums = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, size=global_size//local_size)
 
-    evt = knl(queue, global_shape, None, np.int32(0), 
-              rho_gpu, u_gpu, partialSums, localSums)
+  #   evt = knl(queue, global_shape, None, np.int32(0), 
+  #             rho_gpu, u_gpu, partialSums, localSums)
     
-    global_shape = (global_shape[0]//local_shape[0], 
-                    global_shape[1]//local_shape[1], 
-                    global_shape[2]//local_shape[2])
+  #   global_shape = (global_shape[0]//local_shape[0], 
+  #                   global_shape[1]//local_shape[1], 
+  #                   global_shape[2]//local_shape[2])
     
-    global_size = global_size//local_size
-    evt.wait()
+  #   global_size = global_size//local_size
+  #   evt.wait()
 
     
-    cl.enqueue_copy(queue, sums, partialSums)
+  #   cl.enqueue_copy(queue, sums, partialSums)
 
-  print(result, sums[0, 0, 0])
-  assert(np.allclose([result, ], [sums[0, 0, 0], ]))
-  return sums[0, 0, 0]
+  # print(result, sums[0, 0, 0])
+  # assert(np.allclose([result, ], [sums[0, 0, 0], ]))
+  return result
 
 
 
