@@ -94,8 +94,8 @@ def initials(rho, p, u, B):
 
 def main(start_step = 0):
   global u, B_arr, rho, e_kin, e_mag
-
-  data_service = DataService(str(date.today()) + "_LES_v1", scalar_shape, vec_shape, rw_energy=config.REWRITE_ENERGY)
+  # str(date.today())
+  data_service = DataService(str(date.today())+ "_LES_no_model", scalar_shape, vec_shape, rw_energy=config.REWRITE_ENERGY)
   # data_service = DataService("2023-02-15" + "test", scalar_shape, vec_shape, rw_energy=config.REWRITE_ENERGY)
 
   timing = Timing()
