@@ -320,6 +320,9 @@ def compute_kin_energy(knl_kin_e, queue, rho_gpu, u_gpu, kin_energy_gpu):
   return energy.get()
 
 
+
+
+
 def compute_mag_energy(knl_mag_e, queue, B_gpu, mag_energy_gpu):
   # result = 0.0
   # for i in range(0, 3):
@@ -333,6 +336,8 @@ def compute_mag_energy(knl_mag_e, queue, B_gpu, mag_energy_gpu):
 
   energy = cl.array.sum(mag_energy_gpu)
   return energy.get()
+
+
 
 
 def plot_energy(end_step):
