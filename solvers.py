@@ -216,7 +216,7 @@ class MHDSolver():
         Abins, _, _ = stats.binned_statistic(knrm, fourier_amplitudes,
                                             statistic = "sum",
                                             bins = kbins)
-        Abins *= np.pi * (kbins[1:]**2 - kbins[:-1]**2)
+        # Abins *= np.pi * (kbins[1:]**2 - kbins[:-1]**2)
 
         kol = -(5.0/3.0)
         # kol = -10
