@@ -240,7 +240,8 @@ class MHDSolver():
             energy_gpu.get()[2],  
             self.config.domain_size[0],
              self.config.domain_size[1],
-              self.config.domain_size[2])
+              self.config.domain_size[2],
+              smooth=False)
 
         plt.loglog(kvals, Abins)
         # plt.loglog(kvals, Y)
