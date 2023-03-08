@@ -209,7 +209,7 @@ class MHDSolver():
         knrm = knrm.flatten()
         fourier_amplitudes = fourier_amplitudes.flatten()
 
-        kbins = np.arange(0, np.mean(self.config.true_shape[0] * self.config.domain_size[0])//2+1, 1.)
+        kbins = np.arange(0.5, np.mean(self.config.true_shape[0] * self.config.domain_size[0])//2+1, 1.)
 
         kvals = 0.5 * (kbins[1:] + kbins[:-1])
 
