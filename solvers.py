@@ -204,7 +204,7 @@ class MHDSolver():
             * self.config.domain_size[2]
 
         kfreq3D = np.meshgrid(kfreq_0, kfreq_1, kfreq_2)
-        print(np.array(kfreq3D).shape)
+        print(np.mean(fourier_amplitudes))
         knrm = np.sqrt(kfreq3D[0]**2 + kfreq3D[1]**2 + kfreq3D[2]**2)
 
         knrm = knrm.flatten()
