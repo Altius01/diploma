@@ -193,48 +193,51 @@ class MHDSolver():
 
 
     def get_energy_spectrum(self, energy_gpu):
-        fourier_image = np.fft.fftn(energy_gpu.get())
-        fourier_amplitudes = np.abs(fourier_image)**2
+        # fourier_image = np.fft.fftn(energy_gpu.get())
+        # fourier_amplitudes = np.abs(fourier_image)**2
 
-        kfreq_0 = np.fft.fftfreq(self.config.true_shape[0], d=\
-            self.config.domain_size[0])
-        kfreq_1 = np.fft.fftfreq(self.config.true_shape[1], d=\
-            self.config.domain_size[1])
-        kfreq_2 = np.fft.fftfreq(self.config.true_shape[2], d=\
-            self.config.domain_size[2])
+        # kfreq_0 = np.fft.fftfreq(self.config.true_shape[0], d=\
+        #     self.config.domain_size[0])
+        # kfreq_1 = np.fft.fftfreq(self.config.true_shape[1], d=\
+        #     self.config.domain_size[1])
+        # kfreq_2 = np.fft.fftfreq(self.config.true_shape[2], d=\
+        #     self.config.domain_size[2])
 
-        kfreq3D = np.meshgrid(kfreq_0, kfreq_1, kfreq_2)
-        knrm = np.sqrt(kfreq3D[0]**2 + kfreq3D[1]**2 + kfreq3D[2]**2)
+        # kfreq3D = np.meshgrid(kfreq_0, kfreq_1, kfreq_2)
+        # knrm = np.sqrt(kfreq3D[0]**2 + kfreq3D[1]**2 + kfreq3D[2]**2)
 
-        knrm = knrm.flatten()
-        fourier_amplitudes = fourier_amplitudes.flatten()
+        # knrm = knrm.flatten()
+        # fourier_amplitudes = fourier_amplitudes.flatten()
 
-        kbins = np.arange(0.5, np.mean(self.config.true_shape[0] * self.config.domain_size[0])//2+1, 1.)
+        # kbins = np.arange(0.5, np.mean(self.config.true_shape[0] * self.config.domain_size[0])//2+1, 1.)
 
-        kvals = 0.5 * (kbins[1:] + kbins[:-1])
+        # kvals = 0.5 * (kbins[1:] + kbins[:-1])
 
-        print(kbins)
-        print(fourier_amplitudes)
-        Abins, _, _ = stats.binned_statistic(knrm, fourier_amplitudes,
-                                            statistic = "sum",
-                                            bins = kbins)
-        # Abins *= np.pi * (kbins[1:]**2 - kbins[:-1]**2)
+        # print(kbins)
+        # print(fourier_amplitudes)
+        # Abins, _, _ = stats.binned_statistic(knrm, fourier_amplitudes,
+        #                                     statistic = "sum",
+        #                                     bins = kbins)
+        # # Abins *= np.pi * (kbins[1:]**2 - kbins[:-1]**2)
 
-        kol = -(5.0/3.0)
-        # kol = -10
-        def kolmogorov(x):
-            return np.power(x, kol)
+        # kol = -(5.0/3.0)
+        # # kol = -10
+        # def kolmogorov(x):
+        #     return np.power(x, kol)
         
-        def kr_yor(x):
-            return np.power(x, -(3.0/2.0))
+        # def kr_yor(x):
+        #     return np.power(x, -(3.0/2.0))
         
-        k_sprec = np.vectorize(kolmogorov)
-        kr_yor_spec = np.vectorize(kr_yor)
+        # k_sprec = np.vectorize(kolmogorov)
+        # kr_yor_spec = np.vectorize(kr_yor)
 
-        Y = k_sprec(kvals)
-        Y_kr = kr_yor_spec(kvals)
+        # Y = k_sprec(kvals)
+        # Y_kr = kr_yor_spec(kvals)
 
-        _, kvals, Abins = compute_tke_spectrum(energy_gpu.get(),  
+        _, kvals, Abins = compute_tke_spectrum(
+            energy_gpu.get()[0],  
+            energy_gpu.get()[1],  
+            energy_gpu.get()[2],  
             self.config.domain_size[0],
              self.config.domain_size[1],
               self.config.domain_size[2])
@@ -287,90 +290,97 @@ class MHDSolver():
         return cl.array.sum(mag_energy_gpu).get()
 
 
-def compute_tke_spectrum(u,lx,ly,lz,smooth=False):
-
-    from numpy.fft import fftn
-    from numpy import sqrt, zeros, conj, pi, arange, ones, convolve
-
+def compute_tke_spectrum(u, v, w, lx, ly, lz, smooth):
     """
     Given a velocity field u, v, w, this function computes the kinetic energy
-    spectrum of that velocity field in spectral space. This procedure consists of the 
+    spectrum of that velocity field in spectral space. This procedure consists of the
     following steps:
     1. Compute the spectral representation of u, v, and w using a fast Fourier transform.
     This returns uf, vf, and wf (the f stands for Fourier)
     2. Compute the point-wise kinetic energy Ef (kx, ky, kz) = 1/2 * (uf, vf, wf)* conjugate(uf, vf, wf)
-    3. For every wave number triplet (kx, ky, kz) we have a corresponding spectral kinetic energy 
+    3. For every wave number triplet (kx, ky, kz) we have a corresponding spectral kinetic energy
     Ef(kx, ky, kz). To extract a one dimensional spectrum, E(k), we integrate Ef(kx,ky,kz) over
     the surface of a sphere of radius k = sqrt(kx^2 + ky^2 + kz^2). In other words
     E(k) = sum( E(kx,ky,kz), for all (kx,ky,kz) such that k = sqrt(kx^2 + ky^2 + kz^2) ).
-
     Parameters:
-    -----------  
+    -----------
     u: 3D array
-        The x-velocity component.
+      The x-velocity component.
     v: 3D array
-        The y-velocity component.
+      The y-velocity component.
     w: 3D array
-        The z-velocity component.    
+      The z-velocity component.
     lx: float
-        The domain size in the x-direction.
+      The domain size in the x-direction.
     ly: float
-        The domain size in the y-direction.
+      The domain size in the y-direction.
     lz: float
-        The domain size in the z-direction.
+      The domain size in the z-direction.
     smooth: boolean
-        A boolean to smooth the computed spectrum for nice visualization.
+      A boolean to smooth the computed spectrum for nice visualization.
     """
-    nx = len(u[:,0,0])
-    ny = len(u[0,:,0])
-    nz = len(u[0,0,:])
-    
-    nt= nx*ny*nz
-    n = nx #int(np.round(np.power(nt,1.0/3.0)))
-    
-    uh = fftn(u)/nt
-    
-    tkeh = zeros((nx,ny,nz))
-    tkeh = (uh*conj(uh)).real
-    
-    k0x = 2.0*pi/lx
-    k0y = 2.0*pi/ly
-    k0z = 2.0*pi/lz
-    
-    knorm = (k0x + k0y + k0z)/3.0
-    
-    kxmax = nx/2
-    kymax = ny/2
-    kzmax = nz/2
-    
-    wave_numbers = knorm*arange(0,n)
-    
-    tke_spectrum = zeros(len(wave_numbers))
-    
-    for kx in range(nx):
-        rkx = kx
-        if (kx > kxmax):
-            rkx = rkx - (nx)
-        for ky in range(ny):
-            rky = ky
-            if (ky>kymax):
-                rky=rky - (ny)
-            for kz in range(nz):        
-                rkz = kz
-                if (kz>kzmax):
-                    rkz = rkz - (nz)
-                rk = sqrt(rkx*rkx + rky*rky + rkz*rkz)
-                k = int(np.round(rk))
-                tke_spectrum[k] = tke_spectrum[k] + tkeh[kx,ky,kz]
+    nx = len(u[:, 0, 0])
+    ny = len(v[0, :, 0])
+    nz = len(w[0, 0, :])
 
-    tke_spectrum = tke_spectrum/knorm
+    nt = nx * ny * nz
+    n = nx  # int(np.round(np.power(nt,1.0/3.0)))
+
+    uh = fftn(u) / nt
+    vh = fftn(v) / nt
+    wh = fftn(w) / nt
+
+    tkeh = 0.5 * (uh * conj(uh) + vh * conj(vh) + wh * conj(wh)).real
+
+    k0x = 2.0 * pi / lx
+    k0y = 2.0 * pi / ly
+    k0z = 2.0 * pi / lz
+
+    knorm = (k0x + k0y + k0z) / 3.0
+    print('knorm = ', knorm)
+
+    kxmax = nx / 2
+    kymax = ny / 2
+    kzmax = nz / 2
+
+    # dk = (knorm - kmax)/n
+    # wn = knorm + 0.5 * dk + arange(0, nmodes) * dk
+
+    wave_numbers = knorm * arange(0, n)
+
+    tke_spectrum = zeros(len(wave_numbers))
+
+    for kx in range(-nx//2, nx//2-1):
+        for ky in range(-ny//2, ny//2-1):
+            for kz in range(-nz//2, nz//2-1):
+                rk = sqrt(kx**2 + ky**2 + kz**2)
+                k = int(np.round(rk))
+                tke_spectrum[k] += tkeh[kx, ky, kz]
+    # for kx in range(nx):
+    #     rkx = kx
+    #     if kx > kxmax:
+    #         rkx = rkx - nx
+    #     for ky in range(ny):
+    #         rky = ky
+    #         if ky > kymax:
+    #             rky = rky - ny
+    #         for kz in range(nz):
+    #             rkz = kz
+    #             if kz > kzmax:
+    #                 rkz = rkz - nz
+    #             rk = sqrt(rkx * rkx + rky * rky + rkz * rkz)
+    #             k = int(np.round(rk))
+    #             tke_spectrum[k] = tke_spectrum[k] + tkeh[kx, ky, kz]
+
+    tke_spectrum = tke_spectrum / knorm
+
     #  tke_spectrum = tke_spectrum[1:]
     #  wave_numbers = wave_numbers[1:]
     if smooth:
-        tkespecsmooth = movingaverage(tke_spectrum, 5) #smooth the spectrum
-        tkespecsmooth[0:4] = tke_spectrum[0:4] # get the first 4 values from the original data
+        tkespecsmooth = movingaverage(tke_spectrum, 5)  # smooth the spectrum
+        tkespecsmooth[0:4] = tke_spectrum[0:4]  # get the first 4 values from the original data
         tke_spectrum = tkespecsmooth
 
-    knyquist = knorm*min(nx,ny,nz)/2 
+    knyquist = knorm * min(nx, ny, nz) / 2
 
-    return knyquist, wave_numbers, tke_spectrum
+    return knyquist, wave_numbers, 
