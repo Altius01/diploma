@@ -213,6 +213,9 @@ class MHDSolver():
         kbins = np.arange(0.5, np.mean(self.config.true_shape[0])//2+1, 1.)
 
         kvals = 0.5 * (kbins[1:] + kbins[:-1])
+
+        print(kbins)
+        print(fourier_amplitudes)
         Abins, _, _ = stats.binned_statistic(knrm, fourier_amplitudes,
                                             statistic = "sum",
                                             bins = kbins)
