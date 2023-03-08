@@ -350,18 +350,18 @@ def compute_tke_spectrum(u,lx,ly,lz,smooth=False):
     for kx in xrange(nx):
         rkx = kx
         if (kx > kxmax):
-        rkx = rkx - (nx)
+            rkx = rkx - (nx)
         for ky in xrange(ny):
-        rky = ky
-        if (ky>kymax):
-            rky=rky - (ny)
-        for kz in xrange(nz):        
-            rkz = kz
-            if (kz>kzmax):
-            rkz = rkz - (nz)
-            rk = sqrt(rkx*rkx + rky*rky + rkz*rkz)
-            k = int(np.round(rk))
-            tke_spectrum[k] = tke_spectrum[k] + tkeh[kx,ky,kz]
+            rky = ky
+            if (ky>kymax):
+                rky=rky - (ny)
+            for kz in xrange(nz):        
+                rkz = kz
+                if (kz>kzmax):
+                    rkz = rkz - (nz)
+                rk = sqrt(rkx*rkx + rky*rky + rkz*rkz)
+                k = int(np.round(rk))
+                tke_spectrum[k] = tke_spectrum[k] + tkeh[kx,ky,kz]
 
     tke_spectrum = tke_spectrum/knorm
     #  tke_spectrum = tke_spectrum[1:]
