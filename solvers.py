@@ -234,8 +234,8 @@ class MHDSolver():
         Y_kr = kr_yor_spec(kvals)
 
         plt.loglog(kvals, Abins)
-        plt.loglog(kvals, Y)
-        plt.loglog(kvals, Y_kr)
+        # plt.loglog(kvals, Y)
+        # plt.loglog(kvals, Y_kr)
 
         plt.show()
         plt.cla()
