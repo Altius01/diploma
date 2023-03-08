@@ -193,47 +193,75 @@ class MHDSolver():
 
 
     def get_energy_spectrum(self, energy_gpu):
-        fourier_image = np.fft.fftn(energy_gpu.get())
-        fourier_amplitudes = np.abs(fourier_image)**2
+        # fourier_image = np.fft.fftn(energy_gpu.get())
+        # fourier_amplitudes = np.abs(fourier_image)**2
 
-        kfreq_0 = np.fft.fftfreq(self.config.true_shape[0]) * self.config.true_shape[0]
-        kfreq_1 = np.fft.fftfreq(self.config.true_shape[1]) * self.config.true_shape[1]
-        kfreq_2 = np.fft.fftfreq(self.config.true_shape[2]) * self.config.true_shape[2]
+        # kfreq_0 = np.fft.fftfreq(self.config.true_shape[0])# * self.config.true_shape[0]
+        # kfreq_1 = np.fft.fftfreq(self.config.true_shape[1])# * self.config.true_shape[1]
+        # kfreq_2 = np.fft.fftfreq(self.config.true_shape[2])# * self.config.true_shape[2]
 
-        kfreq3D = np.meshgrid(kfreq_0, kfreq_1, kfreq_2)
-        knrm = np.sqrt(kfreq3D[0]**2 + kfreq3D[1]**2 + kfreq3D[2]**2)
+        # kfreq3D = np.meshgrid(kfreq_0, kfreq_1, kfreq_2)
+        # knrm = np.sqrt(kfreq3D[0]**2 + kfreq3D[1]**2 + kfreq3D[2]**2)
 
-        knrm = knrm.flatten()
-        fourier_amplitudes = fourier_amplitudes.flatten()
+        # knrm = knrm.flatten()
+        # fourier_amplitudes = fourier_amplitudes.flatten()
 
-        kbins = np.arange(0.5, np.mean(self.config.true_shape)//2+1, 1.)
-        kvals = 0.5 * (kbins[1:] + kbins[:-1])
-        Abins, _, _ = stats.binned_statistic(knrm, fourier_amplitudes,
-                                            statistic = "mean",
-                                            bins = kbins)
-        Abins *= np.pi * (kbins[1:]**2 - kbins[:-1]**2)
+        # kbins = np.arange(0.5, np.mean(self.config.true_shape)//2+1, 1.)
+        # kvals = 0.5 * (kbins[1:] + kbins[:-1])
+        # Abins, _, _ = stats.binned_statistic(knrm, fourier_amplitudes,
+        #                                     statistic = "mean",
+        #                                     bins = kbins)
+        # Abins *= np.pi * (kbins[1:]**2 - kbins[:-1]**2)
 
-        # kol = -(5.0/3.0)
-        kol = -10
-        def kolmogorov(x):
-            return np.power(x, kol)
+        # # kol = -(5.0/3.0)
+        # kol = -10
+        # def kolmogorov(x):
+        #     return np.power(x, kol)
         
-        def kr_yor(x):
-            return np.power(x, -(3.0/2.0))
+        # def kr_yor(x):
+        #     return np.power(x, -(3.0/2.0))
         
-        k_sprec = np.vectorize(kolmogorov)
-        kr_yor_spec = np.vectorize(kr_yor)
+        # k_sprec = np.vectorize(kolmogorov)
+        # kr_yor_spec = np.vectorize(kr_yor)
 
-        Y = k_sprec(kvals)
-        Y_kr = kr_yor_spec(kvals)
+        # Y = k_sprec(kvals)
+        # Y_kr = kr_yor_spec(kvals)
 
-        plt.loglog(kvals, Abins)
-        plt.loglog(kvals, Y)
-        plt.loglog(kvals, Y_kr)
+        # plt.loglog(kvals, Abins)
+        # plt.loglog(kvals, Y)
+        # plt.loglog(kvals, Y_kr)
 
+        # plt.show()
+        # plt.cla()
+        # return kvals, Abins
+
+        bins = 1.
+        tbins = self.config.true_shape[0]
+
+        density = energy_gpu.get()
+
+        x, y, z = np.mgrid[0:self.config.true_shape[0], 
+            0:self.config.true_shape[0], 
+            0:self.config.true_shape[0]]
+
+        dist = np.sqrt(x**2+y**2+z**2)
+
+        FT = np.fft.fftn(density)
+        power = FT.real*FT.real + FT.imag*FT.imag
+
+        P = power.reshape(np.size(power))
+        dist = dist.reshape(np.size(dist))
+
+        intervals = np.array([nn*bins for nn in range(0,int(tbins)+1)])
+
+        p = np.histogram(dist, bins=intervals, weights=P)[0]
+        pd = np.histogram(dist, bins=intervals)[0]
+        pd.astype('float')
+        p = p/pd
+
+        plt.figure()
+        plt.plot(2.*np.pi/intervals[1:], p)
         plt.show()
-        plt.cla()
-        return kvals, Abins
 
 
     def _save_energy(self):
