@@ -347,15 +347,15 @@ def compute_tke_spectrum(u,lx,ly,lz,smooth=False):
     
     tke_spectrum = zeros(len(wave_numbers))
     
-    for kx in xrange(nx):
+    for kx in range(nx):
         rkx = kx
         if (kx > kxmax):
             rkx = rkx - (nx)
-        for ky in xrange(ny):
+        for ky in range(ny):
             rky = ky
             if (ky>kymax):
                 rky=rky - (ny)
-            for kz in xrange(nz):        
+            for kz in range(nz):        
                 rkz = kz
                 if (kz>kzmax):
                     rkz = rkz - (nz)
