@@ -270,7 +270,8 @@ class MHDSolver():
                              self.rho_gpu.data, self.u_gpu.data, kin_energy_gpu.data)
         evt.wait()
 
-        self.get_energy_spectrum(kin_energy_gpu)
+        # self.get_energy_spectrum(kin_energy_gpu)
+        self.get_energy_spectrum(self.u_gpu)
 
         return cl.array.sum(kin_energy_gpu).get()
 
@@ -286,7 +287,8 @@ class MHDSolver():
                              self.config.true_shape, None, self.B_gpu.data, mag_energy_gpu.data)
         evt.wait()
 
-        self.get_energy_spectrum(mag_energy_gpu)
+        # self.get_energy_spectrum(mag_energy_gpu)
+        self.get_energy_spectrum(self.B_gpu)
 
         return cl.array.sum(mag_energy_gpu).get()
 
