@@ -196,21 +196,20 @@ class MHDSolver():
         fourier_image = np.fft.fftn(energy_gpu.get())
         fourier_amplitudes = np.abs(fourier_image)**2
 
-        kfreq_0 = np.fft.fftfreq(self.config.true_shape[0])\
-            * self.config.domain_size[0]
-        kfreq_1 = np.fft.fftfreq(self.config.true_shape[1])\
-            * self.config.domain_size[1]
-        kfreq_2 = np.fft.fftfreq(self.config.true_shape[2])\
-            * self.config.domain_size[2]
+        kfreq_0 = np.fft.fftfreq(self.config.true_shape[0], d=\
+            self.config.domain_size[0])
+        kfreq_1 = np.fft.fftfreq(self.config.true_shape[1], d=\
+            self.config.domain_size[1])
+        kfreq_2 = np.fft.fftfreq(self.config.true_shape[2], d=\
+            self.config.domain_size[2])
 
         kfreq3D = np.meshgrid(kfreq_0, kfreq_1, kfreq_2)
-        print(np.max(fourier_amplitudes), np.min(fourier_amplitudes))
         knrm = np.sqrt(kfreq3D[0]**2 + kfreq3D[1]**2 + kfreq3D[2]**2)
 
         knrm = knrm.flatten()
         fourier_amplitudes = fourier_amplitudes.flatten()
 
-        kbins = np.arange(0.5, np.mean(self.config.true_shape[0])//2+1, 1.)
+        kbins = np.arange(0, np.mean(self.config.true_shape[0] * self.config.domain_size[0])//2+1, 1.)
 
         kvals = 0.5 * (kbins[1:] + kbins[:-1])
 
