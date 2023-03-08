@@ -390,4 +390,4 @@ def compute_tke_spectrum(u, v, w, lx, ly, lz, smooth):
 
     knyquist = knorm * min(nx, ny, nz) / 2
 
-    return knyquist, wave_numbers, tke_spectrum
+    return knyquist, wave_numbers[:len(wave_numbers)//2], tke_spectrum[:len(tke_spectrum)//2]
