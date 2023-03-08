@@ -294,6 +294,10 @@ class MHDSolver():
 
 
 def compute_tke_spectrum(u, v, w, lx, ly, lz, smooth):
+    import numpy as np
+    from numpy.fft import fftn
+    from numpy import sqrt, zeros, conj, pi, arange, ones, convolve
+
     """
     Given a velocity field u, v, w, this function computes the kinetic energy
     spectrum of that velocity field in spectral space. This procedure consists of the
