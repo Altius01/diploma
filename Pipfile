@@ -9,6 +9,7 @@ matplotlib = "*"
 h5py = "*"
 pyopencl = "*"
 sympy = "*"
+scipy = "*"
 
 [dev-packages]
 ipykernel = "*"

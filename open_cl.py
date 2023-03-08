@@ -27,7 +27,6 @@ T_SHAPE = config.T_SHAPE
 
 h = (L/T_SHAPE[0], L/T_SHAPE[1], L/T_SHAPE[2])
 
-dV = h[0]*h[1]*h[2]
 SHAPE = config.SHAPE
 FLUX_SHAPE = (T_SHAPE[0]+1, T_SHAPE[1]+1, T_SHAPE[2]+1,)
 
@@ -36,9 +35,8 @@ steps = config.STEPS
 T =  steps * 0.5*(1/T_SHAPE[0])**2
 RW_DELETIMER = config.RW_DELETIMER
 
-L = 2*np.pi
-h = (L/T_SHAPE[0], L/T_SHAPE[1], L/T_SHAPE[2])
-dV = h[0]*h[1]*h[2]
+# L = 2*np.pi
+# h = (L/T_SHAPE[0], L/T_SHAPE[1], L/T_SHAPE[2])
 
 scalar_shape = SHAPE
 vec_shape = (3,) + SHAPE
@@ -94,9 +92,10 @@ def initials(rho, p, u, B):
 
 def main(start_step = 0):
   global u, B_arr, rho, e_kin, e_mag
-  # str(date.today())
-  data_service = DataService(str(date.today())+ "_LES_no_model", scalar_shape, vec_shape, rw_energy=config.REWRITE_ENERGY)
-  # data_service = DataService("2023-02-15" + "test", scalar_shape, vec_shape, rw_energy=config.REWRITE_ENERGY)
+  dir_name = str(date.today())+ "_tests"
+
+  data_service = DataService(scalar_shape, vec_shape, 
+                             dir_name=dir_name, rw_energy=config.REWRITE_ENERGY)
 
   timing = Timing()
 
@@ -191,7 +190,7 @@ def main(start_step = 0):
     timing.add_timestamp('compute_mag_energy end')
     print('compute_mag_energy end\n')
 
-    data_service.save_data(0, (u, B_arr, rho, p))
+    data_service.save_data(0, (rho, p, u, B_arr))
 
   else:
     e_kin = np.delete(e_kin,-1)
@@ -206,13 +205,13 @@ def main(start_step = 0):
   global steps
   i = start_step
   while t < T:
-    dT = np.float64(0.5*(1/T_SHAPE[0])**2)
-
+    dT = 0.5*(1/T_SHAPE[0])**2
     t += dT
+
     if i == start_step and start_step != 0:
       timing.add_elapsed_time_start()
       print(f'Reading step_{i} file:')
-      data_service.read_data(i, (u, B_arr, rho, p))
+      data_service.read_data(i, (rho, p, u, B_arr))
       
       rho_gpu.set(ary=rho)
       u_gpu.set(ary=u)
@@ -234,32 +233,32 @@ def main(start_step = 0):
       rho_flux_gpu.data, u_flux_gpu.data, B_flux_gpu.data,
     )
     evt.wait()
-
+    
     evaluate_ghosts(knl_ghosts, queue, rk1_gpu, pk1_gpu, uk1_gpu, Bk1_gpu)
 
-    evt = knl_solve_1(queue, T_SHAPE, None, 
-      np.float64(dT), rho_gpu.data, p_gpu.data, u_gpu.data, B_gpu.data,
-      rk1_gpu.data, pk1_gpu.data, uk1_gpu.data, Bk1_gpu.data,
-      rk2_gpu.data, pk2_gpu.data, uk2_gpu.data, Bk2_gpu.data,
-      rho_flux_gpu.data, u_flux_gpu.data, B_flux_gpu.data,
-    )
-    evt.wait()
-
-    evaluate_ghosts(knl_ghosts, queue, rk2_gpu, pk2_gpu, uk2_gpu, Bk2_gpu)
-
-    # evt = knl_fluxes(queue, FLUX_SHAPE, None, 
-    #   rk2_gpu, pk2_gpu, uk2_gpu, Bk2_gpu,
-    #   rho_flux_gpu, u_flux_gpu, B_flux_gpu,
+    # evt = knl_solve_1(queue, T_SHAPE, None, 
+    #   np.float64(dT), rho_gpu.data, p_gpu.data, u_gpu.data, B_gpu.data,
+    #   rk1_gpu.data, pk1_gpu.data, uk1_gpu.data, Bk1_gpu.data,
+    #   rk2_gpu.data, pk2_gpu.data, uk2_gpu.data, Bk2_gpu.data,
+    #   rho_flux_gpu.data, u_flux_gpu.data, B_flux_gpu.data,
     # )
     # evt.wait()
 
-    evt = knl_solve_2(queue, T_SHAPE, None, 
-      np.float64(dT), rho_gpu.data, p_gpu.data, u_gpu.data, B_gpu.data,
-      rk1_gpu.data, pk1_gpu.data, uk1_gpu.data, Bk1_gpu.data,
-      rk2_gpu.data, pk2_gpu.data, uk2_gpu.data, Bk2_gpu.data,
-      rho_flux_gpu.data, u_flux_gpu.data, B_flux_gpu.data,
-    )
-    evt.wait()
+    # evaluate_ghosts(knl_ghosts, queue, rk2_gpu, pk2_gpu, uk2_gpu, Bk2_gpu)
+
+    # # evt = knl_fluxes(queue, FLUX_SHAPE, None, 
+    # #   rk2_gpu, pk2_gpu, uk2_gpu, Bk2_gpu,
+    # #   rho_flux_gpu, u_flux_gpu, B_flux_gpu,
+    # # )
+    # # evt.wait()
+
+    # evt = knl_solve_2(queue, T_SHAPE, None, 
+    #   np.float64(dT), rho_gpu.data, p_gpu.data, u_gpu.data, B_gpu.data,
+    #   rk1_gpu.data, pk1_gpu.data, uk1_gpu.data, Bk1_gpu.data,
+    #   rk2_gpu.data, pk2_gpu.data, uk2_gpu.data, Bk2_gpu.data,
+    #   rho_flux_gpu.data, u_flux_gpu.data, B_flux_gpu.data,
+    # )
+    # evt.wait()
 
     evaluate_ghosts(knl_ghosts, queue, rk1_gpu, pk1_gpu, uk1_gpu, Bk1_gpu)
 
@@ -269,7 +268,6 @@ def main(start_step = 0):
     p_gpu = pk1_gpu
 
     timing.add_elapsed_time_end("elapsed_kernel_time")
-
     if (i+1) % RW_DELETIMER == 0:
       timing.add_elapsed_time_start()
       print(f"Step: {i}, t: {t}")
@@ -282,7 +280,7 @@ def main(start_step = 0):
 
       e_kin = np.append(e_kin, compute_kin_energy(knl_kin_e, queue, rho_gpu, u_gpu, kin_energy_gpu))
       e_mag = np.append(e_mag, compute_mag_energy(knl_mag_e, queue, B_gpu, mag_energy_gpu))
-      data_service.save_data(i+1, (u, B_arr, rho, p))
+      data_service.save_data(i+1, (rho, p, u, B_arr))
       timing.add_elapsed_time_end("elapsed_writing_time")
     i += 1
 
@@ -296,7 +294,7 @@ def main(start_step = 0):
     
     e_kin = np.append(e_kin, compute_kin_energy(knl_kin_e, queue, rho_gpu, u_gpu, kin_energy_gpu))
     e_mag = np.append(e_mag, compute_mag_energy(knl_mag_e, queue, B_gpu, mag_energy_gpu))
-    data_service.save_data(i+1, (u, B_arr, rho, p))
+    data_service.save_data(i+1, (rho, p, u, B_arr))
 
   data_service.save_energy((e_kin, e_mag))
 
@@ -340,20 +338,20 @@ def compute_mag_energy(knl_mag_e, queue, B_gpu, mag_energy_gpu):
 
 
 
-def plot_energy(end_step):
-  global u, B_arr, rho, p, e_kin, e_mag
-  data_service = DataService(str(date.today()) + 'v2', scalar_shape, vec_shape)
+# def plot_energy(end_step):
+#   global u, B_arr, rho, p, e_kin, e_mag
+#   data_service = DataService(str(date.today()) + 'v2', scalar_shape, vec_shape)
 
-  e_kin = np.array([])
-  e_mag = np.array([])
-  for i in range(0, end_step, RW_DELETIMER):
-    print(f"Step: {i}")
-    data_service.read_data(i, (u, B_arr, rho, p))
+#   e_kin = np.array([])
+#   e_mag = np.array([])
+#   for i in range(0, end_step, RW_DELETIMER):
+#     print(f"Step: {i}")
+#     data_service.read_data(i, (u, B_arr, rho, p))
 
-    e_kin = np.append(e_kin, compute_kin_energy())
-    e_mag = np.append(e_mag, compute_mag_energy())
+#     e_kin = np.append(e_kin, compute_kin_energy())
+#     e_mag = np.append(e_mag, compute_mag_energy())
   
-  data_service.save_energy((e_kin, e_mag))
+#   data_service.save_energy((e_kin, e_mag))
 
 
 if __name__ == "__main__":

@@ -19,32 +19,47 @@ __constant double const hz = L*1.0/(double)(TRUE_Nz);
 
 __constant double const h[3] = {hx, hy, hz};
 
+__constant double const dV = hx*hy*hz;
+
 #define gamma (5.0/3.0)
 
-#define B0 0.282094
-#define p0 gamma
-#define rho0 ( gamma*gamma )
+#define _B0 0.282094
+#define P0 gamma
+#define ro0 ( gamma*gamma )
 #define eps_p 0.01
 
 #define Cs 1.0
-#define Ca ( B0 / ( 2.0*sqrt(M_PI)*gamma ) )
+#define Ca ( _B0 / ( 2.0*sqrt(M_PI)*gamma ) )
 
 #define Re 100.0
 #define Rem 100.0
 #define Ms 0.2
 
-#define u0 (double) (Ms * Cs)
+#define U0 (double) (Ms * Cs)
 
-#define Ma  ( u0 / Ca )
+#define Ma  ( U0 / Ca )
 
-#define mu0  ( (rho0*u0*L)/Re )
+#define mu0  ( (ro0*U0*L)/Re )
 
-#define C1  1e-3
-#define Y1  1e-3
-#define D1  1e-3
+#define C1  0.17
+#define Y1  0.1
+#define D1  0.1
+
+#define C3  0.173
+#define Y3  0.0
+#define D3  0.1
 
 #define SGS_DELTA_QUAD   (hx*hx + hy*hy + hz*hz)
 #define SGS_DELTA_ABS   sqrt(hx*hx + hy*hy + hz*hz)
+
+int t_vec_buffer_idx(int4 i) {
+    int ax = i.s0;
+    int x = i.s1;
+    int y = i.s2;
+    int z = i.s3;
+
+    return ax*TRUE_Nx*TRUE_Ny*TRUE_Nz + x*TRUE_Ny*TRUE_Nz + y*TRUE_Nz + z;
+}
 
 int vec_buffer_idx(int4 i) {
     int ax = i.s0;
