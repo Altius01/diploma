@@ -234,6 +234,11 @@ class MHDSolver():
         Y = k_sprec(kvals)
         Y_kr = kr_yor_spec(kvals)
 
+        _, kvals, Abins = compute_tke_spectrum(energy_gpu.get(),  
+            self.config.domain_size[0],
+             self.config.domain_size[1],
+              self.config.domain_size[2])
+
         plt.loglog(kvals, Abins)
         # plt.loglog(kvals, Y)
         # plt.loglog(kvals, Y_kr)
@@ -241,34 +246,6 @@ class MHDSolver():
         plt.show()
         plt.cla()
         return kvals, Abins
-
-        # bins = 1.
-        # tbins = self.config.true_shape[0]
-
-        # density = energy_gpu.get()
-
-        # x, y, z = np.mgrid[0:self.config.true_shape[0], 
-        #     0:self.config.true_shape[0], 
-        #     0:self.config.true_shape[0]]
-
-        # dist = np.sqrt(x**2+y**2+z**2)
-
-        # FT = np.fft.fftn(density)
-        # power = FT.real*FT.real + FT.imag*FT.imag
-
-        # P = power.reshape(np.size(power))
-        # dist = dist.reshape(np.size(dist))
-
-        # intervals = np.array([nn*bins for nn in range(0,int(tbins)+1)])
-
-        # p = np.histogram(dist, bins=intervals, weights=P)[0]
-        # pd = np.histogram(dist, bins=intervals)[0]
-        # pd.astype('float')
-        # p = p/pd
-
-        # plt.figure()
-        # plt.plot(2.*np.pi/intervals[1:], p)
-        # plt.show()
 
 
     def _save_energy(self):
@@ -308,3 +285,88 @@ class MHDSolver():
         self.get_energy_spectrum(mag_energy_gpu)
 
         return cl.array.sum(mag_energy_gpu).get()
+
+
+def compute_tke_spectrum(u,lx,ly,lz,smooth=False):
+  """
+  Given a velocity field u, v, w, this function computes the kinetic energy
+  spectrum of that velocity field in spectral space. This procedure consists of the 
+  following steps:
+  1. Compute the spectral representation of u, v, and w using a fast Fourier transform.
+  This returns uf, vf, and wf (the f stands for Fourier)
+  2. Compute the point-wise kinetic energy Ef (kx, ky, kz) = 1/2 * (uf, vf, wf)* conjugate(uf, vf, wf)
+  3. For every wave number triplet (kx, ky, kz) we have a corresponding spectral kinetic energy 
+  Ef(kx, ky, kz). To extract a one dimensional spectrum, E(k), we integrate Ef(kx,ky,kz) over
+  the surface of a sphere of radius k = sqrt(kx^2 + ky^2 + kz^2). In other words
+  E(k) = sum( E(kx,ky,kz), for all (kx,ky,kz) such that k = sqrt(kx^2 + ky^2 + kz^2) ).
+
+  Parameters:
+  -----------  
+  u: 3D array
+    The x-velocity component.
+  v: 3D array
+    The y-velocity component.
+  w: 3D array
+    The z-velocity component.    
+  lx: float
+    The domain size in the x-direction.
+  ly: float
+    The domain size in the y-direction.
+  lz: float
+    The domain size in the z-direction.
+  smooth: boolean
+    A boolean to smooth the computed spectrum for nice visualization.
+  """
+  nx = len(u[:,0,0])
+  ny = len(u[0,:,0])
+  nz = len(u[0,0,:])
+  
+  nt= nx*ny*nz
+  n = nx #int(np.round(np.power(nt,1.0/3.0)))
+  
+  uh = fftn(u)/nt
+  
+  tkeh = zeros((nx,ny,nz))
+  tkeh = (uh*conj(uh)).real
+  
+  k0x = 2.0*pi/lx
+  k0y = 2.0*pi/ly
+  k0z = 2.0*pi/lz
+  
+  knorm = (k0x + k0y + k0z)/3.0
+  
+  kxmax = nx/2
+  kymax = ny/2
+  kzmax = nz/2
+  
+  wave_numbers = knorm*arange(0,n)
+  
+  tke_spectrum = zeros(len(wave_numbers))
+  
+  for kx in xrange(nx):
+    rkx = kx
+    if (kx > kxmax):
+      rkx = rkx - (nx)
+    for ky in xrange(ny):
+      rky = ky
+      if (ky>kymax):
+        rky=rky - (ny)
+      for kz in xrange(nz):        
+        rkz = kz
+        if (kz>kzmax):
+          rkz = rkz - (nz)
+        rk = sqrt(rkx*rkx + rky*rky + rkz*rkz)
+        k = int(np.round(rk))
+        tke_spectrum[k] = tke_spectrum[k] + tkeh[kx,ky,kz]
+
+  tke_spectrum = tke_spectrum/knorm
+#  tke_spectrum = tke_spectrum[1:]
+#  wave_numbers = wave_numbers[1:]
+  if smooth:
+    tkespecsmooth = movingaverage(tke_spectrum, 5) #smooth the spectrum
+    tkespecsmooth[0:4] = tke_spectrum[0:4] # get the first 4 values from the original data
+    tke_spectrum = tkespecsmooth
+
+  knyquist = knorm*min(nx,ny,nz)/2 
+
+  return knyquist, wave_numbers, tke_spectrum
