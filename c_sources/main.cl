@@ -1,6 +1,6 @@
-#define Re 1000
-#define Rem 1000
-#define Ma 10
+#define Re 100
+#define Rem 100
+#define Ma 1.1
 
 #define gamma (7.0/5.0)
 

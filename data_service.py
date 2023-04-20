@@ -32,15 +32,6 @@ class DataService:
 
     def read_data(self, step): # args):
         with h5py.File(Path(f"{self.dir_name}/data/step_{step}.hdf5"), "r") as f:
-            # args[0].reshape(self.vector_shape)[:] = f['u']
-            # args[1].reshape(self.vector_shape)[:] = f['B']
-            # args[2].reshape(self.scalar_shape)[:] = f['rho']
-            # args[3].reshape(self.scalar_shape)[:] = f['p']
-            # args[0][0].set(ary=f['rho'][:], queue=args[0][1])
-            # args[1][0].set(ary=f['p'][:], queue=args[1][1])
-            # args[2][0].set(ary=f['u'][:], queue=args[2][1])
-            # args[3][0].set(ary=f['B'][:], queue=args[2][1])
-
             return f['t'][0], f['rho'][:], f['p'][:], f['u'][:], f['B'][:]
 
     def get_or_create_dir(self, path: Path) -> Path:
@@ -95,8 +86,11 @@ class DataService:
 
         with h5py.File(path / "e_kin.hdf5", "r") as f:
             kin_e = f['energy'][()]
+            time_k = f['time'][()]
 
         with h5py.File(path / "e_mag.hdf5", "r") as f:
             mag_e = f['energy'][()]
+            time_m = f['time'][()]
 
-        return kin_e, mag_e
+        assert(np.allclose(time_k, time_m))
+        return kin_e, mag_e, time_k

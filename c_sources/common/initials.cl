@@ -41,7 +41,7 @@ __kernel void Orszag_Tang_3D_inital(
     const double U0 = 0.1;
     const double _B0 = 0.1;
 
-    const double rho_0 = 0.1;
+    const double rho_0 = 1;
     const double p_0 = pow(rho_0, gamma);
     
     rho[vec_buffer_idx(index_x)] = rho_0;

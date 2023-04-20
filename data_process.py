@@ -93,3 +93,6 @@ class MHD_DataProcessor:
 
         self.data_service.save_energy((self.kin_energy, self.mag_energy, self.time_energy))
 
+    def get_energy(self):
+        return self.data_service.get_energy()
+

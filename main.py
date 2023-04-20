@@ -97,24 +97,35 @@ DNS_32_CONFIG_PATH = Path.cwd() / 'dns_32_config.json'
 def main():
     ctx = cl.create_some_context()
 
-    dns_256_config = Config(file_path=DNS_256_CONFIG_PATH)
-    dns_256_solver = MHD_Solver(context=ctx, config=dns_256_config, 
-                                data_path=DNS_256_DATA_PATH)
-    dns_256_postprocess = MHD_DataProcessor(context=ctx, config=dns_256_config, 
-                                            data_path=DNS_256_DATA_PATH)
-    
-    dns_128_config = Config(file_path=DNS_128_CONFIG_PATH)
-    dns_128_solver = MHD_Solver(context=ctx, config=dns_128_config, 
-                                data_path=DNS_128_DATA_PATH)
-    dns_128_postprocess = MHD_DataProcessor(context=ctx, config=dns_128_config, 
-                                            data_path=DNS_128_DATA_PATH)
-    
+    dns_32_config = Config(file_path=DNS_32_CONFIG_PATH)
     dns_64_config = Config(file_path=DNS_64_CONFIG_PATH)
-    dns_64_solver = MHD_Solver(context=ctx, config=dns_64_config, 
-                                data_path=DNS_64_DATA_PATH)
-    dns_64_postprocess = MHD_DataProcessor(context=ctx, config=dns_64_config, 
-                                            data_path=DNS_64_DATA_PATH)
+    dns_128_config = Config(file_path=DNS_128_CONFIG_PATH)
+    dns_256_config = Config(file_path=DNS_256_CONFIG_PATH)
+
+    # dns_256_solver = MHD_Solver(context=ctx, config=dns_256_config, 
+    #                             data_path=DNS_256_DATA_PATH)
+    # dns_128_solver = MHD_Solver(context=ctx, config=dns_128_config, 
+    #                             data_path=DNS_128_DATA_PATH)
+    # dns_64_solver = MHD_Solver(context=ctx, config=dns_64_config, 
+    #                             data_path=DNS_64_DATA_PATH)
+    dns_32_solver = MHD_Solver(context=ctx, config=dns_32_config, 
+                                data_path=DNS_32_DATA_PATH)
     
+    # dns_256_postprocess = MHD_DataProcessor(context=ctx, config=dns_256_config, 
+    #                                         data_path=DNS_256_DATA_PATH)
+    # dns_128_postprocess = MHD_DataProcessor(context=ctx, config=dns_128_config, 
+    #                                         data_path=DNS_128_DATA_PATH)
+    # dns_64_postprocess = MHD_DataProcessor(context=ctx, config=dns_64_config, 
+    #                                         data_path=DNS_64_DATA_PATH)
+    # dns_32_postprocess = MHD_DataProcessor(context=ctx, config=dns_32_config, 
+    #                                         data_path=DNS_32_DATA_PATH)
+    
+    dns_32_solver.read_file(1)
+    # dns_32_solver._les_filter(dns_32_solver.rho_gpu)
+    # dns_32_solver._les_v_filter(dns_32_solver.B_gpu)
+    dns_32_solver.get_Lu()
+    # dns_32_solver.solve()
+    # dns_32_postprocess.compute_energy_only()
 
     # dns_64_solver.solve()
     # dns_64_postprocess.compute_energy_only()
@@ -122,12 +133,47 @@ def main():
     # dns_128_solver.solve()
     # dns_128_postprocess.compute_energy_only()
 
-    dns_256_solver.solve()
+    # dns_256_solver.solve()
     # dns_256_postprocess.compute_energy_only()
 
+    # plot_energies([dns_32_postprocess, dns_64_postprocess, dns_128_postprocess, dns_256_postprocess])
 
-def plot_energies():
-    pass
+
+def plot_energies(posprocesses: list[MHD_DataProcessor]):
+    kin_e = []
+    mag_e = []
+    time = []
+    labels = []
+    for p in posprocesses:
+        label = f'dns: {p.config.true_shape[0]}'
+        e_k, e_m, t = p.get_energy()
+        time.append(t)
+        labels.append(label)
+        kin_e.append(e_k)
+        mag_e.append(e_m)
+
+    plt.figure(figsize=(16, 10), dpi= 80, facecolor='w', edgecolor='k')
+    for i in range(len(kin_e)):
+        plt.scatter(time[i], kin_e[i], label=labels[i])
+    
+    plt.gca().set(xlabel='Time', ylabel='Kinetic energy')
+
+    plt.xticks(fontsize=12); plt.yticks(fontsize=12)
+    plt.title("Plot of kinetic enegy by time", fontsize=22)
+    plt.legend(fontsize=12)    
+    plt.show()  
+    plt.cla()
+
+    plt.figure(figsize=(16, 10), dpi= 80, facecolor='w', edgecolor='k')
+    for i in range(len(mag_e)):
+        plt.scatter(time[i], mag_e[i], label=labels[i])
+    
+    plt.gca().set(xlabel='Time', ylabel='Magnetic energy')
+
+    plt.xticks(fontsize=12); plt.yticks(fontsize=12)
+    plt.title("Plot of magnetic enegy by time", fontsize=22)
+    plt.legend(fontsize=12)    
+    plt.show()  
 
 
 if __name__ == "__main__":

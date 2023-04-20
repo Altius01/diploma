@@ -1,3 +1,8 @@
+from math import prod
+
+import taichi as ti
+import taichi.math as tm
+
 import numpy as np
 import pyopencl as cl
 import pyopencl.array as cla
@@ -7,8 +12,56 @@ from logger import Logger
 from cl_builder import CLBuilder
 from data_service import DataService
 
+@ti.func
+def get_sc_idx(vec_idx):
+    [vec_idx[i] for i in range(len(vec_idx)-3, len(vec_idx))]
+
+@ti.func
+def rho_u(rho, u):
+    
+    @ti.func
+    def call_me(vec_idx):
+        return u[vec_idx]
+    return call_me
+
+@ti.func
+def filter_sc(src: ti.types.ndarray(), out: ti.types.ndarray(), filter_size: ti.i32, func=None):
+    for i in ti.grouped(out):
+        for j in ti.grouped(ti.ndrange(filter_size, filter_size, filter_size)):
+            l = i
+            ti.atomic_add(out[i], src[l])
+        out[i] /= filter_size**3
+
+@ti.func
+def filter_vec(src: ti.types.ndarray(), out: ti.types.ndarray(), filter_size: ti.i32, func=None):
+    print('filter_vec')
+    for i in ti.grouped(out):
+        for j in ti.grouped(ti.ndrange(filter_size, filter_size, filter_size)):
+            l = i
+            l[1:] += j
+
+            print(func[l], src[l])
+            ti.atomic_add(out[i], src[l])
+        out[i] /= filter_size**3
+
+@ti.func
+def filter_mat(src: ti.types.ndarray(), out: ti.types.ndarray(), filter_size: ti.i32, func=None):
+    for i in ti.grouped(out):
+        for j in ti.grouped(ti.ndrange(filter_size, filter_size, filter_size)):
+            l = i
+            l[2:] += j
+            ti.atomic_add(out[i], src[l])
+        out[i] /= filter_size**3
+        
+def get_filtered_shape(shape, filter_size):
+    ret = list(shape)
+    for i in range(-3, 0):
+        ret[i] //= filter_size
+    return tuple(ret)
+
 class MHD_Solver:
     def __init__(self, context, config, data_path=''):
+        ti.init(arch=ti.gpu, debug=True)
         self.config = config
 
         self.context = context
@@ -82,8 +135,112 @@ class MHD_Solver:
             if self.current_step % self.config.rw_del == 0:
                 self.save_file(self.current_step)
                 
-        # if self.current_step % self.config.rw_del != 0:
-        #         self.save_file(self.current_step)
+    def _get_idx(self, x, y, z):
+        return self.config.shape[0]*self.config.shape[1] * x + self.config.shape[1] * y + z
+    
+    def _get_v_idx(self, ax, x, y, z):
+        return self.config.shape[0]*self.config.shape[1]*self.config.shape[2]*ax +\
+        self.config.shape[0]*self.config.shape[1] * x + self.config.shape[1] * y + z
+    
+    def _get_list_idx(self, x0, x1, y0, y1, z0, z1):
+        ret = []
+        for x in range(x0, x1):
+            for y in range(y0, y1):
+                for z in range(z0, z1):
+                    ret.append(self._get_idx(x, y, z))
+
+        return np.array(ret, dtype=np.int32)
+    
+    def _get_list_v_idx(self, ax, x0, x1, y0, y1, z0, z1):
+        ret = []
+        for x in range(x0, x1):
+            for y in range(y0, y1):
+                for z in range(z0, z1):
+                    ret.append(self._get_v_idx(ax, x, y, z))
+
+        return np.array(ret, dtype=np.int32)
+    
+    def get_Lu(self, filter_size=8):
+        u = ti.ndarray(dtype=ti.float64, shape=self.u_gpu.shape)
+        B = ti.ndarray(dtype=ti.float64, shape=self.B_gpu.shape)
+        p = ti.ndarray(dtype=ti.float64, shape=self.p_gpu.shape)
+        rho = ti.ndarray(dtype=ti.float64, shape=self.rho_gpu.shape)
+
+        u.from_numpy(self.u_gpu.get())
+        B.from_numpy(self.B_gpu.get())
+        p.from_numpy(self.p_gpu.get())
+        rho.from_numpy(self.rho_gpu.get())
+
+        Lu = ti.ndarray(dtype=ti.float64, shape=(3, 3, ) + self.config.shape)
+
+        u_filter = ti.ndarray(dtype=ti.float64, shape=get_filtered_shape(self.u_gpu.shape, filter_size))
+        B_filter = ti.ndarray(dtype=ti.float64, shape=get_filtered_shape(self.B_gpu.shape, filter_size))
+        p_filter = ti.ndarray(dtype=ti.float64, shape=get_filtered_shape(self.p_gpu.shape, filter_size))
+        rho_filter = ti.ndarray(dtype=ti.float64, shape=get_filtered_shape(self.rho_gpu.shape, filter_size))
+
+        @ti.kernel
+        def Lu_compute(Lu: ti.types.ndarray(),
+                       rho: ti.types.ndarray(),
+                       rho_filter: ti.types.ndarray(),
+                       u: ti.types.ndarray(),
+                       u_filter: ti.types.ndarray(),
+                       B: ti.types.ndarray(),
+                       B_filter: ti.types.ndarray(),):
+            # filter_sc(rho, rho_filter, filter_size=filter_size)
+            filter_vec(u, u_filter, filter_size=filter_size, func=rho_u(rho, u))
+            # filter_vec(B, B_filter, filter_size=filter_size)
+
+        Lu_compute(Lu, rho, rho_filter, u, u_filter, B, B_filter)
+
+        print(u_filter.to_numpy())
+
+
+    def _les_filter(self, arr: cla.Array, filter_size=2):
+        filter_shape = tuple([filter_size, filter_size, filter_size])
+        new_shape = tuple(s//filter_size for s in self.config.shape)
+        Logger.log(new_shape)
+        filtered_arr = cla.empty(self.queue, new_shape, dtype=arr.dtype)
+
+        ary = cla.empty(self.queue, filter_shape, dtype=np.float64)
+        dest_idx = cla.to_device(self.queue, ary=np.arange(0, prod(filter_shape), dtype=np.int32))
+        for x in range(new_shape[0]):
+            for y in range(new_shape[1]):
+                for z in range(new_shape[2]):
+                    # Logger.log(f"Map from [{x*filter_size}:{(x+1)*filter_size},\
+                    #  {y*filter_size}:{(y+1)*filter_size}, \
+                    # {z*filter_size}:{(z+1)*filter_size}] to [{x},{y},{z}]")
+                    host_src_idx = self._get_list_idx(x0=x*filter_size, x1=(x+1)*filter_size, 
+                                                      y0=y*filter_size, y1=(y+1)*filter_size, 
+                                                      z0=z*filter_size, z1=(z+1)*filter_size)
+                    src_idx = cla.to_device(queue=self.queue, ary=host_src_idx)
+                    cla.multi_take_put(queue=self.queue, arrays=[arr], 
+                                       src_indices=src_idx, dest_indices=dest_idx, out=[ary])
+                    filtered_arr[x, y, z] = cla.sum(queue=self.queue, a=ary) / prod(filter_shape)
+        return filtered_arr
+    
+    def _les_v_filter(self, arr: cla.Array, filter_size=2):
+        filter_shape = tuple([filter_size, filter_size, filter_size])
+        new_shape = (3, ) + tuple(s//filter_size for s in self.config.shape)
+        Logger.log(new_shape)
+        filtered_arr = cla.empty(self.queue, new_shape, dtype=arr.dtype)
+
+        ary = cla.empty(self.queue, filter_shape, dtype=np.float64)
+        dest_idx = cla.to_device(self.queue, ary=np.arange(0, prod(filter_shape), dtype=np.int32))
+        for ax in range(3):
+            for x in range(new_shape[0]):
+                for y in range(new_shape[1]):
+                    for z in range(new_shape[2]):
+                        # Logger.log(f"Map from [{ax}, {x*filter_size}:{(x+1)*filter_size},\
+                        #  {y*filter_size}:{(y+1)*filter_size}, \
+                        # {z*filter_size}:{(z+1)*filter_size}] to [{ax}, {x},{y},{z}]")
+                        host_src_idx = self._get_list_v_idx(ax, x0=x*filter_size, x1=(x+1)*filter_size, 
+                                                        y0=y*filter_size, y1=(y+1)*filter_size, 
+                                                        z0=z*filter_size, z1=(z+1)*filter_size)
+                        src_idx = cla.to_device(queue=self.queue, ary=host_src_idx)
+                        cla.multi_take_put(queue=self.queue, arrays=[arr], 
+                                        src_indices=src_idx, dest_indices=dest_idx, out=[ary])
+                        filtered_arr[ax, x, y, z] = cla.sum(queue=self.queue, a=ary) / prod(filter_shape)
+        return filtered_arr
 
     def _step(self, dT):
         _p = [self.p_gpu, self.pk1_gpu, self.pk2_gpu]
