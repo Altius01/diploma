@@ -14,42 +14,32 @@ from data_service import DataService
 
 @ti.func
 def get_sc_idx(vec_idx):
-    [vec_idx[i] for i in range(len(vec_idx)-3, len(vec_idx))]
+    return [vec_idx[i] for i in range(len(vec_idx)-3, len(vec_idx))]
 
-@ti.func
-def rho_u(rho, u):
-    
-    @ti.func
-    def call_me(vec_idx):
-        return u[vec_idx]
-    return call_me
-
-@ti.func
-def filter_sc(src: ti.types.ndarray(), out: ti.types.ndarray(), filter_size: ti.i32, func=None):
+@ti.kernel
+def filter_sc(src: ti.types.ndarray(), out: ti.types.ndarray(), filter_size: ti.i32):
     for i in ti.grouped(out):
         for j in ti.grouped(ti.ndrange(filter_size, filter_size, filter_size)):
-            l = i
+            l = i * filter_size + j[:]
             ti.atomic_add(out[i], src[l])
         out[i] /= filter_size**3
 
-@ti.func
-def filter_vec(src: ti.types.ndarray(), out: ti.types.ndarray(), filter_size: ti.i32, func=None):
-    print('filter_vec')
+@ti.kernel
+def filter_vec(src: ti.types.ndarray(), out: ti.types.ndarray(), filter_size: ti.i32):
     for i in ti.grouped(out):
         for j in ti.grouped(ti.ndrange(filter_size, filter_size, filter_size)):
             l = i
-            l[1:] += j
+            l[1:] = l[1:] * filter_size + j[:]
 
-            print(func[l], src[l])
             ti.atomic_add(out[i], src[l])
         out[i] /= filter_size**3
 
-@ti.func
-def filter_mat(src: ti.types.ndarray(), out: ti.types.ndarray(), filter_size: ti.i32, func=None):
+@ti.kernel
+def filter_mat(src: ti.types.ndarray(), out: ti.types.ndarray(), filter_size: ti.i32):
     for i in ti.grouped(out):
         for j in ti.grouped(ti.ndrange(filter_size, filter_size, filter_size)):
             l = i
-            l[2:] += j
+            l[2:] += l[2:] * filter_size + j[:]
             ti.atomic_add(out[i], src[l])
         out[i] /= filter_size**3
         
@@ -171,28 +161,84 @@ class MHD_Solver:
         p.from_numpy(self.p_gpu.get())
         rho.from_numpy(self.rho_gpu.get())
 
-        Lu = ti.ndarray(dtype=ti.float64, shape=(3, 3, ) + self.config.shape)
-
         u_filter = ti.ndarray(dtype=ti.float64, shape=get_filtered_shape(self.u_gpu.shape, filter_size))
         B_filter = ti.ndarray(dtype=ti.float64, shape=get_filtered_shape(self.B_gpu.shape, filter_size))
         p_filter = ti.ndarray(dtype=ti.float64, shape=get_filtered_shape(self.p_gpu.shape, filter_size))
         rho_filter = ti.ndarray(dtype=ti.float64, shape=get_filtered_shape(self.rho_gpu.shape, filter_size))
 
+        FILTER_SIZE = 8
+
+        filter_sc(p, p_filter, FILTER_SIZE)
+        filter_sc(rho, rho_filter, FILTER_SIZE)
+        filter_vec(u, u_filter, FILTER_SIZE)
+        filter_vec(B, B_filter, FILTER_SIZE)
+
+        @ti.kernel
+        def rho_u(rho: ti.types.ndarray(), u: ti.types.ndarray(), result: ti.types.ndarray()):
+            for i in ti.grouped(result):
+                result[i] = rho[get_sc_idx(i)]*u[i]
+
+        @ti.kernel
+        def BiBj(B: ti.types.ndarray(), result: ti.types.ndarray()):
+            for idx in ti.grouped(result):
+                i, j, x, y, z = idx
+                result[idx] = B[i, x, y, z]*B[j, x, y, z]
+
+        @ti.kernel
+        def Lu_A(rho: ti.types.ndarray(), rho_u: ti.types.ndarray(), result: ti.types.ndarray()):
+            for idx in ti.grouped(result):
+                i, j, x, y, z = idx
+                result[idx] = (rho_u[i, x, y, z] * rho_u[j, x, y, z]) / rho[get_sc_idx(idx)]
+
+        @ti.kernel
+        def Lb_A(rho_u: ti.types.ndarray(), B: ti.types.ndarray(), result: ti.types.ndarray()):
+            for idx in ti.grouped(result):
+                i, j, x, y, z = idx
+                result[idx] = (rho_u[i, x, y, z] * B[j, x, y, z]) / rho[get_sc_idx(idx)]
+
+        Lu = ti.ndarray(dtype=ti.float64, shape=(3, 3, ) + self.config.shape)
+        Lu_filter = ti.ndarray(dtype=ti.float64, shape=get_filtered_shape(Lu.shape, FILTER_SIZE))
+
+
+        rho_u_ = ti.ndarray(dtype=ti.f64, shape=self.config.v_shape)
+        rho_u_filter = ti.ndarray(dtype=ti.f64, shape=get_filtered_shape(self.config.v_shape, FILTER_SIZE))
+        rho_u(rho, u, rho_u_)
+
+        filter_vec(rho_u_, rho_u_filter, FILTER_SIZE)
+
+
+        Lu_a_ = ti.ndarray(dtype=ti.f64, shape=Lu.shape)
+        Lu_A(rho, rho_u_, Lu_a_)
+        Lu_a_filter = ti.ndarray(dtype=ti.f64, shape=get_filtered_shape(Lu.shape, FILTER_SIZE))
+
+        filter_mat(Lu_a_, Lu_a_filter, FILTER_SIZE)
+
+        Lu_a_ = ti.ndarray(dtype=ti.f64, shape=get_filtered_shape(Lu.shape, FILTER_SIZE))
+
+        Lu_A(rho_filter, rho_u_filter, Lu_a_)
+
+        BiBj_ = ti.ndarray(dtype=ti.f64, shape=Lu.shape)
+        BiBj_filter = ti.ndarray(dtype=ti.f64, shape=get_filtered_shape(Lu.shape, FILTER_SIZE))
+        BiBj(B, BiBj_)
+        filter_mat(BiBj_, BiBj_filter, FILTER_SIZE)
+
+        BiBj_ = ti.ndarray(dtype=ti.f64, shape=get_filtered_shape(Lu.shape, FILTER_SIZE))
+
+        BiBj(B_filter, BiBj_)
+
+        Ma = 1.1
         @ti.kernel
         def Lu_compute(Lu: ti.types.ndarray(),
-                       rho: ti.types.ndarray(),
-                       rho_filter: ti.types.ndarray(),
-                       u: ti.types.ndarray(),
-                       u_filter: ti.types.ndarray(),
-                       B: ti.types.ndarray(),
-                       B_filter: ti.types.ndarray(),):
-            # filter_sc(rho, rho_filter, filter_size=filter_size)
-            filter_vec(u, u_filter, filter_size=filter_size, func=rho_u(rho, u))
-            # filter_vec(B, B_filter, filter_size=filter_size)
+                       BiBj_: ti.types.ndarray(),
+                       BiBj_filter: ti.types.ndarray(),
+                       Lu_A_: ti.types.ndarray(),
+                       Lu_A_filter: ti.types.ndarray(),):
+            print(Lu_A_filter.shape)
+            for idx in ti.grouped(Lu):
+                Lu[idx] = Lu_A_filter[idx] - Lu_A_[idx] - (BiBj_filter[idx] - BiBj_[idx])/Ma**2
 
-        Lu_compute(Lu, rho, rho_filter, u, u_filter, B, B_filter)
+        Lu_compute(Lu_filter, BiBj_, BiBj_filter, Lu_a_, Lu_a_filter)
 
-        print(u_filter.to_numpy())
 
 
     def _les_filter(self, arr: cla.Array, filter_size=2):
