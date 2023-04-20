@@ -1,4 +1,5 @@
 import os
+import re
 import numpy as np
 import pyopencl as cl
 import pyopencl.array
@@ -29,8 +30,10 @@ class MHDSolver():
     B_gpu = None
     rho_gpu = None
 
+    t = 0
     kin_energy = []
     mag_energy = []
+    time_energy = []
 
     curr_step = 0
 
@@ -70,9 +73,28 @@ class MHDSolver():
         self._ghost_points(self.rho_gpu, self.p_gpu, self.u_gpu, self.B_gpu)
         self.save_file(0)
 
+
+    def _replace_define(self, src, define_name, value):
+        reg_str = f'#define {define_name} [a-zA-Z0-9_.-]*'
+        replace_str = f'#define {define_name} {value}'
+        
+        return re.sub(reg_str, replace_str, src)
+
+
     def _build_sources(self):
+        print('Building cl sources...')
         c_sources_dir = (Path(__file__).parent / './c_sources')
-        with open( (c_sources_dir / './main.cl'), 'r') as file:
+
+        with open((c_sources_dir / 'common/mhd_consts_base.cl'), 'r') as file :
+            src = file.read()
+
+        for name, value in self.config.defines:
+            src = self._replace_define(src, name, value)
+
+        with open((c_sources_dir / 'common/mhd_consts.cl'), 'w') as file:
+            file.write(src)
+
+        with open((c_sources_dir / 'main.cl'), 'r') as file:
             data = file.read()
 
         prg = cl.Program(self.context, data).build(options=['-I', 
@@ -84,20 +106,66 @@ class MHDSolver():
         self.knl_ghosts = prg.ghost_nodes_periodic
         self.knl_initial = prg.Orszag_Tang_3D_inital
 
+        print('Building is done!')
+
     
     def read_file(self, i):
-        self.data_service.read_data(i, (self.rho_gpu, self.p_gpu, self.u_gpu, self.B_gpu))
+        self.t, rho_, p_, u_, B_ = self.data_service.read_data(i)
+
+        cl.enqueue_copy(self.queue, self.rho_gpu.data, rho_[:])
+        cl.enqueue_copy(self.queue, self.p_gpu.data, p_[:])
+        cl.enqueue_copy(self.queue, self.u_gpu.data, u_[:])
+        cl.enqueue_copy(self.queue, self.B_gpu.data, B_[:])
 
 
     def save_file(self, i):
-        self.data_service.save_data(i, (self.rho_gpu, self.p_gpu, self.u_gpu, self.B_gpu))
+        self.data_service.save_data(i, (self.t, self.rho_gpu, self.p_gpu, self.u_gpu, self.B_gpu))
+
+
+    def compute_energy_only(self):
+        print('Start computing...')
+        self.curr_step = self.config.start_step
+        while self.curr_step <= (self.config.steps + self.config.start_step):
+            print(f"Step: {self.curr_step}:")
+            self.read_file(self.curr_step)
+
+            self.kin_energy.append(self.compute_kin_energy(self.curr_step))
+            self.mag_energy.append(self.compute_mag_energy(self.curr_step))
+            self.time_energy.append(self.t)
+            self.curr_step += self.config.rw_del
+            print(f'Complete!')
+
+        self._save_energy()
+
+
+    def plot_energy_spectrums_only(self):
+        print('Start plotting...')
+        self.curr_step = self.config.start_step
+        while self.curr_step <= (self.config.steps + self.config.start_step):
+            print(f"Step: {self.curr_step}:")
+            self.read_file(self.curr_step)
+
+            self.get_kin_energy_spectrum(self.curr_step)
+            self.get_mag_energy_spectrum(self.curr_step)
+            self.curr_step += self.config.rw_del
+            print(f'Complete!')
+
+
+    def get_energy_spec(self, idx):
+        self.curr_step = idx
+        self.read_file(self.curr_step)
+
+        kin_k, kin_a = self.get_kin_energy_spectrum(self.curr_step)
+        mag_k, mag_A = self.get_mag_energy_spectrum(self.curr_step)
+        return (mag_k, mag_A), (kin_k, kin_a)
 
 
     def solve(self):
-        t = 0
         self.curr_step = self.config.start_step
 
+        self.t = 0
         if self.config.start_step == 0:
+            print('Solve initials...')
             self.initials()
 
             self.kin_energy.append(self.compute_kin_energy(self.curr_step))
@@ -109,17 +177,18 @@ class MHDSolver():
         while self.curr_step < (self.config.steps + self.config.start_step):
             dT = 0.5 * ( min(self.config.domain_size) / max(self.config.true_shape))**2
 
-            t += dT
+            self.t += dT
             self.curr_step += 1
             self._step(dT)
 
             if self.curr_step % self.config.rw_del == 0:
-                print(f"Step: {self.curr_step}, t: {t}")
+                print(f"Step: {self.curr_step}, t: {self.t}")
                 print(f'Writing step_{self.curr_step} file..')
                 self.save_file(self.curr_step)
 
                 self.kin_energy.append(self.compute_kin_energy(self.curr_step))
                 self.mag_energy.append(self.compute_mag_energy(self.curr_step))
+                self.time_energy.append(self.t)
 
                 print(f'Complete!')
 
@@ -192,62 +261,48 @@ class MHDSolver():
             evt.wait()
 
 
-    def get_energy_spectrum(self, energy_gpu):
-        # fourier_image = np.fft.fftn(energy_gpu.get())
-        # fourier_amplitudes = np.abs(fourier_image)**2
+    def get_kin_energy_spectrum(self, step):
+        if step != self.curr_step:
+            self.read_file(step)
 
-        # kfreq_0 = np.fft.fftfreq(self.config.true_shape[0], d=\
-        #     self.config.domain_size[0])
-        # kfreq_1 = np.fft.fftfreq(self.config.true_shape[1], d=\
-        #     self.config.domain_size[1])
-        # kfreq_2 = np.fft.fftfreq(self.config.true_shape[2], d=\
-        #     self.config.domain_size[2])
-
-        # kfreq3D = np.meshgrid(kfreq_0, kfreq_1, kfreq_2)
-        # knrm = np.sqrt(kfreq3D[0]**2 + kfreq3D[1]**2 + kfreq3D[2]**2)
-
-        # knrm = knrm.flatten()
-        # fourier_amplitudes = fourier_amplitudes.flatten()
-
-        # kbins = np.arange(0.5, np.mean(self.config.true_shape[0] * self.config.domain_size[0])//2+1, 1.)
-
-        # kvals = 0.5 * (kbins[1:] + kbins[:-1])
-
-        # print(kbins)
-        # print(fourier_amplitudes)
-        # Abins, _, _ = stats.binned_statistic(knrm, fourier_amplitudes,
-        #                                     statistic = "sum",
-        #                                     bins = kbins)
-        # # Abins *= np.pi * (kbins[1:]**2 - kbins[:-1]**2)
-
-        # kol = -(5.0/3.0)
-        # # kol = -10
-        # def kolmogorov(x):
-        #     return np.power(x, kol)
-        
-        # def kr_yor(x):
-        #     return np.power(x, -(3.0/2.0))
-        
-        # k_sprec = np.vectorize(kolmogorov)
-        # kr_yor_spec = np.vectorize(kr_yor)
-
-        # Y = k_sprec(kvals)
-        # Y_kr = kr_yor_spec(kvals)
-
-        _, kvals, Abins = compute_tke_spectrum(
-            energy_gpu.get()[0],  
-            energy_gpu.get()[1],  
-            energy_gpu.get()[2],  
-            self.config.domain_size[0],
-             self.config.domain_size[1],
-              self.config.domain_size[2],
-              smooth=False)
-
+        print("Start computing kin spectrum:")
+        _, kvals, Abins = self.compute_tke_spectrum_3D(
+            self.rho_gpu.get(),
+            self.u_gpu.get()
+        )
+        print("Start computing kin spectrum: finished")
+        path = self.data_service.get_or_create_dir('graphs/kin_e/')
         plt.loglog(kvals, Abins)
-        # plt.loglog(kvals, Y)
-        # plt.loglog(kvals, Y_kr)
+        plt.loglog(kvals, Abins,'ro')
+        
+        plt.ylabel('Спектр кинетической энергии')
+        plt.xlabel('k')
 
-        plt.show()
+        # plt.show()
+        plt.savefig(path / f'./kin_e_spectrum_{step}.jpg')
+        plt.cla()
+        return kvals, Abins
+    
+
+    def get_mag_energy_spectrum(self, step):
+        if step != self.curr_step:
+            self.read_file(step)
+
+        print("Start computing mag spectrum:")
+        _, kvals, Abins = self.compute_tme_spectrum_3D(
+            self.B_gpu.get()
+        )
+        print("Start computing mag spectrum: finished")
+        
+        path = self.data_service.get_or_create_dir('graphs/mag_e/')
+        plt.loglog(kvals, Abins)
+        plt.loglog(kvals, Abins,'ro')
+
+        plt.ylabel('Спектр магнитной энергии')
+        plt.xlabel('k')
+
+        # plt.show()
+        plt.savefig(path / f'./mag_e_spectrum_{step}.jpg')
         plt.cla()
         return kvals, Abins
 
@@ -255,8 +310,9 @@ class MHDSolver():
     def _save_energy(self):
         self.kin_energy = np.array(self.kin_energy).astype(np.float64)
         self.mag_energy = np.array(self.mag_energy).astype(np.float64)
+        self.time_energy = np.array(self.time_energy).astype(np.float64)
 
-        self.data_service.save_energy((self.kin_energy, self.mag_energy))
+        self.data_service.save_energy((self.kin_energy, self.mag_energy, self.time_energy))
 
 
     def compute_kin_energy(self, i):
@@ -269,9 +325,6 @@ class MHDSolver():
         evt = self.knl_kin_e(self.queue, self.config.true_shape, None, 
                              self.rho_gpu.data, self.u_gpu.data, kin_energy_gpu.data)
         evt.wait()
-
-        # self.get_energy_spectrum(kin_energy_gpu)
-        self.get_energy_spectrum(self.u_gpu)
 
         return cl.array.sum(kin_energy_gpu).get()
 
@@ -287,107 +340,392 @@ class MHDSolver():
                              self.config.true_shape, None, self.B_gpu.data, mag_energy_gpu.data)
         evt.wait()
 
-        # self.get_energy_spectrum(mag_energy_gpu)
-        self.get_energy_spectrum(self.B_gpu)
-
         return cl.array.sum(mag_energy_gpu).get()
 
 
-def compute_tke_spectrum(u, v, w, lx, ly, lz, smooth):
-    import numpy as np
-    from numpy.fft import fftn
-    from numpy import sqrt, zeros, conj, pi, arange, ones, convolve
+    def compute_tke_spectrum_3D(self, rho, u_gpu, smooth=False):
+        import numpy as np
+        from numpy.fft import fftn
+        from numpy import sqrt, zeros, conj, pi, arange, ones, convolve
 
-    """
-    Given a velocity field u, v, w, this function computes the kinetic energy
-    spectrum of that velocity field in spectral space. This procedure consists of the
-    following steps:
-    1. Compute the spectral representation of u, v, and w using a fast Fourier transform.
-    This returns uf, vf, and wf (the f stands for Fourier)
-    2. Compute the point-wise kinetic energy Ef (kx, ky, kz) = 1/2 * (uf, vf, wf)* conjugate(uf, vf, wf)
-    3. For every wave number triplet (kx, ky, kz) we have a corresponding spectral kinetic energy
-    Ef(kx, ky, kz). To extract a one dimensional spectrum, E(k), we integrate Ef(kx,ky,kz) over
-    the surface of a sphere of radius k = sqrt(kx^2 + ky^2 + kz^2). In other words
-    E(k) = sum( E(kx,ky,kz), for all (kx,ky,kz) such that k = sqrt(kx^2 + ky^2 + kz^2) ).
-    Parameters:
-    -----------
-    u: 3D array
-      The x-velocity component.
-    v: 3D array
-      The y-velocity component.
-    w: 3D array
-      The z-velocity component.
-    lx: float
-      The domain size in the x-direction.
-    ly: float
-      The domain size in the y-direction.
-    lz: float
-      The domain size in the z-direction.
-    smooth: boolean
-      A boolean to smooth the computed spectrum for nice visualization.
-    """
-    nx = len(u[:, 0, 0])
-    ny = len(v[0, :, 0])
-    nz = len(w[0, 0, :])
+        lx = self.config.domain_size[0]
+        ly = self.config.domain_size[0]
+        lz = self.config.domain_size[0]
 
-    nt = nx * ny * nz
-    n = nx  # int(np.round(np.power(nt,1.0/3.0)))
+        _ghosts = self.config.ghosts
+        u = u_gpu[0][_ghosts:-_ghosts,_ghosts:-_ghosts,_ghosts:-_ghosts]
+        v = u_gpu[1][_ghosts:-_ghosts,_ghosts:-_ghosts,_ghosts:-_ghosts]
+        w = u_gpu[2][_ghosts:-_ghosts,_ghosts:-_ghosts,_ghosts:-_ghosts]
 
-    uh = fftn(u) / nt
-    vh = fftn(v) / nt
-    wh = fftn(w) / nt
+        nx = self.config.true_shape[0]
+        ny = self.config.true_shape[1]
+        nz = self.config.true_shape[2]
 
-    tkeh = 0.5 * (uh * conj(uh) + vh * conj(vh) + wh * conj(wh)).real
+        nt = nx * ny * nz
+        n = nx  # int(np.round(np.power(nt,1.0/3.0)))
 
-    k0x = 2.0 * pi / lx
-    k0y = 2.0 * pi / ly
-    k0z = 2.0 * pi / lz
+        # rh = fftn(rho) / nt
+        uh = fftn(u) / nt
+        vh = fftn(v) / nt
+        wh = fftn(w) / nt
 
-    knorm = (k0x + k0y + k0z) / 3.0
-    print('knorm = ', knorm)
+        tkeh = 0.5 * ( (uh * conj(uh) + vh * conj(vh) + wh * conj(wh)) ).real
 
-    kxmax = nx / 2
-    kymax = ny / 2
-    kzmax = nz / 2
+        k0x = 2.0 * pi / lx
+        k0y = 2.0 * pi / ly
+        k0z = 2.0 * pi / lz
 
-    # dk = (knorm - kmax)/n
-    # wn = knorm + 0.5 * dk + arange(0, nmodes) * dk
+        knorm = (k0x + k0y + k0z) / 3.0
+        # print('knorm = ', knorm)
 
-    wave_numbers = knorm * arange(0, n)
+        kxmax = nx / 2
+        kymax = ny / 2
+        kzmax = nz / 2
 
-    tke_spectrum = zeros(len(wave_numbers))
+        # dk = (knorm - kmax)/n
+        # wn = knorm + 0.5 * dk + arange(0, nmodes) * dk
 
-    for kx in range(-nx//2, nx//2-1):
-        for ky in range(-ny//2, ny//2-1):
-            for kz in range(-nz//2, nz//2-1):
-                rk = sqrt(kx**2 + ky**2 + kz**2)
+        wave_numbers = knorm * arange(0, n)
+
+        tke_spectrum = zeros(len(wave_numbers))
+
+        for kx in range(-nx//2, nx//2-1):
+            for ky in range(-ny//2, ny//2-1):
+                for kz in range(-nz//2, nz//2-1):
+                    rk = sqrt(kx**2 + ky**2 + kz**2)
+                    k = int(np.round(rk))
+                    tke_spectrum[k] += tkeh[kx, ky, kz]
+        # for kx in range(nx):
+        #     rkx = kx
+        #     if kx > kxmax:
+        #         rkx = rkx - nx
+        #     for ky in range(ny):
+        #         rky = ky
+        #         if ky > kymax:
+        #             rky = rky - ny
+        #         for kz in range(nz):
+        #             rkz = kz
+        #             if kz > kzmax:
+        #                 rkz = rkz - nz
+        #             rk = sqrt(rkx * rkx + rky * rky + rkz * rkz)
+        #             k = int(np.round(rk))
+        #             tke_spectrum[k] = tke_spectrum[k] + tkeh[kx, ky, kz]
+
+        tke_spectrum = tke_spectrum / knorm
+
+        #  tke_spectrum = tke_spectrum[1:]
+        #  wave_numbers = wave_numbers[1:]
+        # if smooth:
+        #     tkespecsmooth = movingaverage(tke_spectrum, 5)  # smooth the spectrum
+        #     tkespecsmooth[0:4] = tke_spectrum[0:4]  # get the first 4 values from the original data
+        #     tke_spectrum = tkespecsmooth
+
+        knyquist = knorm * min(nx, ny, nz) / 2
+
+        return knyquist, wave_numbers[:], tke_spectrum[:]
+    
+
+    def compute_tke_spectrum_2D(self, rho, u_gpu, smooth=False):
+        import numpy as np
+        from numpy.fft import fftn
+        from numpy import sqrt, zeros, conj, pi, arange, ones, convolve
+
+        lx = self.config.domain_size[0]
+        ly = self.config.domain_size[0]
+
+        _ghosts = self.config.ghosts
+        u = u_gpu[0][_ghosts:-_ghosts, _ghosts:-_ghosts, _ghosts:-_ghosts]
+        v = u_gpu[1][_ghosts:-_ghosts, _ghosts:-_ghosts, _ghosts:-_ghosts]
+
+        nx = self.config.true_shape[0]
+        ny = self.config.true_shape[1]
+
+        nt = nx * ny
+        n = nx  # int(np.round(np.power(nt,1.0/3.0)))
+
+        # rh = fftn(rho) / nt
+        uh = fftn(u) / nt
+        vh = fftn(v) / nt
+
+        tkeh = 0.5 * ( (uh * conj(uh) + vh * conj(vh)) ).real
+
+        k0x = 2.0 * pi / lx
+        k0y = 2.0 * pi / ly
+
+        knorm = (k0x + k0y) / 3.0
+        # print('knorm = ', knorm)
+
+        kxmax = nx / 2
+        kymax = ny / 2
+
+        # dk = (knorm - kmax)/n
+        # wn = knorm + 0.5 * dk + arange(0, nmodes) * dk
+
+        wave_numbers = knorm * arange(0, n)
+
+        tke_spectrum = zeros(len(wave_numbers))
+
+        for kx in range(-nx//2, nx//2-1):
+            for ky in range(-ny//2, ny//2-1):
+                rk = sqrt(kx**2 + ky**2)
                 k = int(np.round(rk))
-                tke_spectrum[k] += tkeh[kx, ky, kz]
-    # for kx in range(nx):
-    #     rkx = kx
-    #     if kx > kxmax:
-    #         rkx = rkx - nx
-    #     for ky in range(ny):
-    #         rky = ky
-    #         if ky > kymax:
-    #             rky = rky - ny
-    #         for kz in range(nz):
-    #             rkz = kz
-    #             if kz > kzmax:
-    #                 rkz = rkz - nz
-    #             rk = sqrt(rkx * rkx + rky * rky + rkz * rkz)
-    #             k = int(np.round(rk))
-    #             tke_spectrum[k] = tke_spectrum[k] + tkeh[kx, ky, kz]
+                tke_spectrum[k] += tkeh[kx, ky, 0]
+     
 
-    tke_spectrum = tke_spectrum / knorm
+        tke_spectrum = tke_spectrum / knorm
 
-    #  tke_spectrum = tke_spectrum[1:]
-    #  wave_numbers = wave_numbers[1:]
-    if smooth:
-        tkespecsmooth = movingaverage(tke_spectrum, 5)  # smooth the spectrum
-        tkespecsmooth[0:4] = tke_spectrum[0:4]  # get the first 4 values from the original data
-        tke_spectrum = tkespecsmooth
+        knyquist = knorm * min(nx, ny) / 2
 
-    knyquist = knorm * min(nx, ny, nz) / 2
+        return knyquist, wave_numbers[:], tke_spectrum[:]
 
-    return knyquist, wave_numbers[:len(wave_numbers)//2], tke_spectrum[:len(tke_spectrum)//2]
+
+    def compute_tme_spectrum_3D(self, B_gpu, smooth=False):
+        import numpy as np
+        from numpy.fft import fftn
+        from numpy import sqrt, zeros, conj, pi, arange, ones, convolve
+
+        lx = self.config.domain_size[0]
+        ly = self.config.domain_size[0]
+        lz = self.config.domain_size[0]
+
+        _ghosts = self.config.ghosts
+        u = B_gpu[0][_ghosts:-_ghosts,_ghosts:-_ghosts,_ghosts:-_ghosts]
+        v = B_gpu[1][_ghosts:-_ghosts,_ghosts:-_ghosts,_ghosts:-_ghosts]
+        w = B_gpu[2][_ghosts:-_ghosts,_ghosts:-_ghosts,_ghosts:-_ghosts]
+
+        nx = self.config.true_shape[0]
+        ny = self.config.true_shape[1]
+        nz = self.config.true_shape[2]
+
+        nt = nx * ny * nz
+        n = nx  # int(np.round(np.power(nt,1.0/3.0)))
+
+        uh = fftn(u) / nt
+        vh = fftn(v) / nt
+        wh = fftn(w) / nt
+
+        tkeh = 0.5 * (uh * conj(uh) + vh * conj(vh) + wh * conj(wh)).real
+
+        k0x = 2.0 * pi / lx
+        k0y = 2.0 * pi / ly
+        k0z = 2.0 * pi / lz
+
+        knorm = (k0x + k0y + k0z) / 3.0
+        # print('knorm = ', knorm)
+
+        kxmax = nx / 2
+        kymax = ny / 2
+        kzmax = nz / 2
+
+        # dk = (knorm - kmax)/n
+        # wn = knorm + 0.5 * dk + arange(0, nmodes) * dk
+
+        wave_numbers = knorm * arange(0, n)
+
+        tke_spectrum = zeros(len(wave_numbers))
+
+        for kx in range(-nx//2, nx//2-1):
+            for ky in range(-ny//2, ny//2-1):
+                for kz in range(-nz//2, nz//2-1):
+                    rk = sqrt(kx**2 + ky**2 + kz**2)
+                    k = int(np.round(rk))
+                    tke_spectrum[k] += tkeh[kx, ky, kz]
+        # for kx in range(nx):
+        #     rkx = kx
+        #     if kx > kxmax:
+        #         rkx = rkx - nx
+        #     for ky in range(ny):
+        #         rky = ky
+        #         if ky > kymax:
+        #             rky = rky - ny
+        #         for kz in range(nz):
+        #             rkz = kz
+        #             if kz > kzmax:
+        #                 rkz = rkz - nz
+        #             rk = sqrt(rkx * rkx + rky * rky + rkz * rkz)
+        #             k = int(np.round(rk))
+        #             tke_spectrum[k] = tke_spectrum[k] + tkeh[kx, ky, kz]
+
+        tke_spectrum = tke_spectrum / knorm
+
+        #  tke_spectrum = tke_spectrum[1:]
+        #  wave_numbers = wave_numbers[1:]
+        # if smooth:
+        #     tkespecsmooth = movingaverage(tke_spectrum, 5)  # smooth the spectrum
+        #     tkespecsmooth[0:4] = tke_spectrum[0:4]  # get the first 4 values from the original data
+        #     tke_spectrum = tkespecsmooth
+
+        knyquist = knorm * min(nx, ny, nz) / 2
+
+        return knyquist, wave_numbers[:], tke_spectrum[:]
+    
+
+    def compute_tme_spectrum_2D(self, B_gpu, smooth=False):
+        import numpy as np
+        from numpy.fft import fftn
+        from numpy import sqrt, zeros, conj, pi, arange, ones, convolve
+
+        lx = self.config.domain_size[0]
+        ly = self.config.domain_size[0]
+
+        _ghosts = self.config.ghosts
+        u = B_gpu[0][_ghosts:-_ghosts,_ghosts:-_ghosts,_ghosts:-_ghosts]
+        v = B_gpu[1][_ghosts:-_ghosts,_ghosts:-_ghosts,_ghosts:-_ghosts]
+
+        nx = self.config.true_shape[0]
+        ny = self.config.true_shape[1]
+
+        nt = nx * ny
+        n = nx  # int(np.round(np.power(nt,1.0/3.0)))
+
+        uh = fftn(u) / nt
+        vh = fftn(v) / nt
+
+        tkeh = 0.5 * (uh * conj(uh) + vh * conj(vh)).real
+
+        k0x = 2.0 * pi / lx
+        k0y = 2.0 * pi / ly
+
+        knorm = (k0x + k0y) / 3.0
+        # print('knorm = ', knorm)
+
+        kxmax = nx / 2
+        kymax = ny / 2
+
+        # dk = (knorm - kmax)/n
+        # wn = knorm + 0.5 * dk + arange(0, nmodes) * dk
+
+        wave_numbers = knorm * arange(0, n)
+
+        tke_spectrum = zeros(len(wave_numbers))
+
+        for kx in range(-nx//2, nx//2-1):
+            for ky in range(-ny//2, ny//2-1):
+                rk = sqrt(kx**2 + ky**2)
+                k = int(np.round(rk))
+                tke_spectrum[k] += tkeh[kx, ky, 0]
+
+
+        tke_spectrum = tke_spectrum / knorm
+
+
+        knyquist = knorm * min(nx, ny) / 2
+
+        return knyquist, wave_numbers[:], tke_spectrum[:]
+
+
+    def plot_energy(self):
+        print('Start plotting energy...')
+        kin_e, mag_e = self.data_service.get_energy()
+
+        dT = 0.5 * ( min(self.config.domain_size) / max(self.config.true_shape))**2
+
+        t = dT * np.array(list(range(len(kin_e))))
+
+        path = self.data_service.get_or_create_dir('graphs/kin_e/')
+        plt.plot(t, kin_e)
+        plt.plot(t, kin_e,'ro')
+
+        plt.ylabel('Кинетическая энергия')
+        plt.xlabel('t')
+
+        print('Kin energy finished!')
+        # plt.show()
+        plt.savefig(path / f'./kin_e.jpg')
+        plt.cla()
+
+        path = self.data_service.get_or_create_dir('graphs/mag_e/')
+        plt.plot(t, mag_e)
+        plt.plot(t, mag_e,'ro')
+
+        plt.ylabel('Магнитная энергия')
+        plt.xlabel('t')
+
+        print('Mag energy finished!')
+
+        # plt.show()
+        plt.savefig(path / f'./mag_e.jpg')
+        plt.cla()
+
+
+    def plot_fields(self):
+        print('Start plotting...')
+        self.curr_step = self.config.start_step
+        while self.curr_step <= (self.config.steps + self.config.start_step):
+            print(f"Step: {self.curr_step}:")
+            self.read_file(self.curr_step)
+
+            self.plot_rho()
+            for i in range(3):
+                self.plot_u(ax=i)
+                self.plot_B(ax=i)
+
+            self.curr_step += self.config.rw_del
+            print(f'Complete!')
+
+    def plot_rho(self, z=0):
+        path = self.data_service.get_or_create_dir('graphs/rho/')
+        plt.xlim(0, self.config.domain_size[0] * (self.config.shape[0]/self.config.true_shape[0]))
+        plt.ylim(0, self.config.domain_size[1] * (self.config.shape[1]/self.config.true_shape[1]))
+
+        x = np.linspace(0, self.config.domain_size[0] \
+                    * (self.config.shape[0]/self.config.true_shape[0]), self.config.shape[0])
+        y = np.linspace(0, self.config.domain_size[1] \
+                    * (self.config.shape[1]/self.config.true_shape[1]), self.config.shape[1])
+        # X, Y = np.meshgrid(x, y)
+
+        plt.contourf(x,y, self.rho_gpu.get()[:, :, z], levels = 20, cmap='plasma')
+        plt.colorbar(label='rho')
+        plt.xlabel('x')
+        plt.ylabel('y')
+        plt.savefig(path / f'./rho_{self.curr_step}.jpg')
+        plt.cla()
+        plt.clf()
+
+    def _ax_to_сhar(self, ax):
+        if ax == 0:
+            return 'x'
+        elif ax == 1:
+            return 'y'
+        elif ax == 2:
+            return 'z'
+        else:
+            return '_'
+
+    def plot_u(self, ax=0, z=0):
+        path = self.data_service.get_or_create_dir(f'graphs/u/u_{self._ax_to_сhar(ax)}/')
+        plt.xlim(0, self.config.domain_size[0] * (self.config.shape[0]/self.config.true_shape[0]))
+        plt.ylim(0, self.config.domain_size[1] * (self.config.shape[1]/self.config.true_shape[1]))
+
+        x = np.linspace(0, self.config.domain_size[0] \
+                    * (self.config.shape[0]/self.config.true_shape[0]), self.config.shape[0])
+        y = np.linspace(0, self.config.domain_size[1] \
+                    * (self.config.shape[1]/self.config.true_shape[1]), self.config.shape[1])
+        # x, y = np.meshgrid(x, y)
+
+        plt.contourf(x,y, self.u_gpu.get()[ax, :, :, z], levels = 20, cmap='plasma')
+        plt.colorbar(label=f'u_{self._ax_to_сhar(ax)}')
+        plt.xlabel('x')
+        plt.ylabel('y')
+        plt.savefig(path / f'./u{self._ax_to_сhar(ax)}_{self.curr_step}.jpg')
+        plt.cla()
+        plt.clf()
+
+    def plot_B(self, ax=0, z=0):
+        path = self.data_service.get_or_create_dir(f'graphs/B/B_{self._ax_to_сhar(ax)}/')
+        plt.xlim(0, self.config.domain_size[0] * (self.config.shape[0]/self.config.true_shape[0]))
+        plt.ylim(0, self.config.domain_size[1] * (self.config.shape[1]/self.config.true_shape[1]))
+
+        x = np.linspace(0, self.config.domain_size[0] \
+                    * (self.config.shape[0]/self.config.true_shape[0]), self.config.shape[0])
+        y = np.linspace(0, self.config.domain_size[1] \
+                    * (self.config.shape[1]/self.config.true_shape[1]), self.config.shape[1])
+        # x, y = np.meshgrid(x, y)
+
+        plt.contourf(x,y, self.B_gpu.get()[ax, :, :, z], levels = 20, cmap='plasma')
+        plt.colorbar(label=f'B_{self._ax_to_сhar(ax)}')
+        plt.xlabel('x')
+        plt.ylabel('y')
+        plt.savefig(path / f'./B_{self._ax_to_сhar(ax)}_{self.curr_step}.jpg')
+        plt.cla()
+        plt.clf()

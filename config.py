@@ -22,7 +22,11 @@ class Config:
     start_step = 0
     # saving freq
     rw_del = 0
-    rewrite_energy = True 
+    rewrite_energy = True
+    defines = []
+    initials = ""
+
+    models = ['DNS', 'SMAGORINSKY', 'CROSS_HELICITY']
 
     def __init__(self, file_path=Path.cwd() / "config.json"):
         self.file_path = file_path
@@ -32,19 +36,21 @@ class Config:
 
         self._read_file()
 
-
     def generate_default(self):
-        default = {}
-        default['ghosts'] = 2
-        default['shape'] = (64, 64, 64,)
-        default['size'] = (2*math.pi, 2*math.pi, 2*math.pi,)
-        default['rw_delemiter'] = 10
-        default['steps'] = 100
-        default['start_step'] = 0
+        str = """
+{
+    "ghosts": 3, 
+    "shape": [64, 64, 64], 
+    "size": [6.283185307179586, 6.283185307179586, 6.283185307179586], 
+    "rw_delemiter": 10,
+    "end_time": 0.1,
+    "start_step": 0,
+    "model": "DNS"
+}
+        """
 
         with open(self.file_path, "w") as f:
-            json.dump(default, f)
-
+            print(str, file=f)
 
     def _read_file(self):
         with open(self.file_path, 'r') as f:
@@ -64,15 +70,33 @@ class Config:
             
             self.v_shape = (3, ) + self.shape
             
-            # self.T_END = data.get('end_time', 0)
+            self.end_time = data.get('end_time', 0)
 
             self.rw_del = data.get('rw_delemiter', 1)
 
-            self.steps = data.get('steps', 0)
-
             self.start_step = data.get('start_step', 0)
+
+            self.model = data.get('model', 'dns')
+
+            self.initials = data.get("initials", "ot")
+
+            self._generate_defines()
             
             if self.start_step == 0:
                 self.rewrite_energy = True
             else:
                 self.rewrite_energy = False
+
+    def _generate_defines(self):
+        self.defines = []
+        for model in self.models:
+            model_flag = "false"
+            if self.model.lower() == model.lower():
+                model_flag = "true"
+            self.defines.append([model, model_flag])
+
+        self.defines.append(['GHOST_CELLS', self.ghosts])
+
+        self.defines.append(['TRUE_Nx', self.true_shape[0]])
+        self.defines.append(['TRUE_Ny', self.true_shape[1]])
+        self.defines.append(['TRUE_Nz', self.true_shape[2]])

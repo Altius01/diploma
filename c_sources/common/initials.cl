@@ -38,8 +38,14 @@ __kernel void Orszag_Tang_3D_inital(
     y -= GHOST_CELLS;
     z -= GHOST_CELLS;
 
-    p[vec_buffer_idx(index_x)] = 5.0/(12.0*M_PI);
-    rho[vec_buffer_idx(index_x)] = 25.0/(36.0*M_PI);
+    const double U0 = 0.1;
+    const double _B0 = 0.1;
+
+    const double rho_0 = 0.1;
+    const double p_0 = pow(rho_0, gamma);
+    
+    rho[vec_buffer_idx(index_x)] = rho_0;
+    p[vec_buffer_idx(index_x)] = p_0;
 
     u[vec_buffer_idx(index_x)] = -1.0*(1 + eps_p*sin(hz*z))*U0*sin(hy*y);
     u[vec_buffer_idx(index_y)]  = (1 + eps_p*sin(hz*z))*U0*sin(hx*x);
@@ -48,17 +54,6 @@ __kernel void Orszag_Tang_3D_inital(
     B[vec_buffer_idx(index_x)]  = -_B0*sin(hy*y);
     B[vec_buffer_idx(index_y)]  = _B0*sin(2.0*hx*x);
     B[vec_buffer_idx(index_z)]  = 0;
-
-    // p[vec_buffer_idx(index_x)] = 1;
-    // rho[vec_buffer_idx(index_x)] = 1;
-
-    // u[vec_buffer_idx(index_x)] = -1.0*(1 + eps_p*sin(hz*z))*sin(hy*y);
-    // u[vec_buffer_idx(index_y)]  = (1 + eps_p*sin(hz*z))*sin(hx*x);
-    // u[vec_buffer_idx(index_z)]  = eps_p*sin(hz*z);
-
-    // B[vec_buffer_idx(index_x)]  = -sin(hy*y);
-    // B[vec_buffer_idx(index_y)]  = sin(2.0*hx*x);
-    // B[vec_buffer_idx(index_z)]  = 0;
 }
 
 __kernel void Tanh_3D_inital(

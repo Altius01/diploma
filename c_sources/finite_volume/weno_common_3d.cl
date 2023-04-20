@@ -55,7 +55,7 @@ double sigma_ij(int4 i, int4 j, global double *u){
     double hj;
     hj = get_h(j);
 
-    return (mu0/Re) * ( dx_3D(u, xj, i, hj) + dx_3D(u, xi, j, hi) 
+    return (1/Re) * ( dx_3D(u, xj, i, hj) + dx_3D(u, xi, j, hi) 
         - (2.0/3.0)*(dx_3D(u, xi, i, hi))*kron(i, j) );
 }
 

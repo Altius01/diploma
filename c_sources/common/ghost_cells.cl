@@ -3,6 +3,16 @@
 
 #include "mhd_consts.cl"
 
+int get_ghost_idx(int idx, const int size, const int ghosts) {
+    while (idx >= size-ghosts)
+        idx -= (size - 2*ghosts);
+
+    while (idx < ghosts)
+        idx += (size - 2*ghosts);
+
+    return idx;
+}
+
 __kernel void vec_ghost_nodes_periodic(
     int ax,
     global double *arr
@@ -21,24 +31,9 @@ __kernel void vec_ghost_nodes_periodic(
     int4 index_y = (int4) {1, x, y, z};
     int4 index_z = (int4) {2, x, y, z};
 
-    int new_x = x;
-    int new_y = y;
-    int new_z = z;
-
-    if (x >= Nx-GHOST_CELLS)
-        new_x -= (Nx - 2*GHOST_CELLS);
-    else if (x < GHOST_CELLS)
-        new_x += (Nx - 2*GHOST_CELLS);
-
-    if (y >= Ny-GHOST_CELLS)
-        new_y -= (Ny - 2*GHOST_CELLS);
-    else if (y < GHOST_CELLS)
-        new_y += (Ny - 2*GHOST_CELLS);
-
-    if (z >= Nz-GHOST_CELLS)
-        new_z -= (Nz - 2*GHOST_CELLS);
-    else if (z < GHOST_CELLS)
-        new_z += (Nz - 2*GHOST_CELLS);
+    int new_x = get_ghost_idx(x, Nx, GHOST_CELLS);
+    int new_y = get_ghost_idx(y, Ny, GHOST_CELLS);
+    int new_z = get_ghost_idx(z, Nz, GHOST_CELLS);
     
     int4 new_index_x = (int4) {0, new_x, new_y, new_z};
     int4 new_index_y = (int4) {1, new_x, new_y, new_z};
@@ -65,24 +60,9 @@ __kernel void sc_ghost_nodes_periodic(
 
     int4 index_x = (int4) {0, x, y, z};
 
-    int new_x = x;
-    int new_y = y;
-    int new_z = z;
-
-    if (x >= Nx-GHOST_CELLS)
-        new_x -= (Nx - 2*GHOST_CELLS);
-    else if (x < GHOST_CELLS)
-        new_x += (Nx - 2*GHOST_CELLS);
-
-    if (y >= Ny-GHOST_CELLS)
-        new_y -= (Ny - 2*GHOST_CELLS);
-    else if (y < GHOST_CELLS)
-        new_y += (Ny - 2*GHOST_CELLS);
-
-    if (z >= Nz-GHOST_CELLS)
-        new_z -= (Nz - 2*GHOST_CELLS);
-    else if (z < GHOST_CELLS)
-        new_z += (Nz - 2*GHOST_CELLS);
+    int new_x = get_ghost_idx(x, Nx, GHOST_CELLS);
+    int new_y = get_ghost_idx(y, Ny, GHOST_CELLS);
+    int new_z = get_ghost_idx(z, Nz, GHOST_CELLS);
     
     int4 new_index_x = (int4) {0, new_x, new_y, new_z};
 
@@ -98,7 +78,7 @@ __kernel void ghost_nodes_periodic(
 
     int sizes[3] = {Nx, Ny, Nz};
     int axes[3] = {x, y, z};
-    axes[ax] += (axes[ax] > 2) ? sizes[ax] - 2*GHOST_CELLS : 0;
+    axes[ax] += (axes[ax] >= GHOST_CELLS) ? sizes[ax] - 2*GHOST_CELLS : 0;
 
     x = axes[0];
     y = axes[1];
@@ -108,24 +88,9 @@ __kernel void ghost_nodes_periodic(
     int4 index_y = (int4) {1, x, y, z};
     int4 index_z = (int4) {2, x, y, z};
 
-    int new_x = x;
-    int new_y = y;
-    int new_z = z;
-
-    if (x >= Nx-GHOST_CELLS)
-        new_x -= (Nx - 2*GHOST_CELLS);
-    else if (x < GHOST_CELLS)
-        new_x += (Nx - 2*GHOST_CELLS);
-
-    if (y >= Ny-GHOST_CELLS)
-        new_y -= (Ny - 2*GHOST_CELLS);
-    else if (y < GHOST_CELLS)
-        new_y += (Ny - 2*GHOST_CELLS);
-
-    if (z >= Nz-GHOST_CELLS)
-        new_z -= (Nz - 2*GHOST_CELLS);
-    else if (z < GHOST_CELLS)
-        new_z += (Nz - 2*GHOST_CELLS);
+    int new_x = get_ghost_idx(x, Nx, GHOST_CELLS);
+    int new_y = get_ghost_idx(y, Ny, GHOST_CELLS);
+    int new_z = get_ghost_idx(z, Nz, GHOST_CELLS);
     
     int4 new_index_x = (int4) {0, new_x, new_y, new_z};
     int4 new_index_y = (int4) {1, new_x, new_y, new_z};

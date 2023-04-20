@@ -26,10 +26,17 @@ double flux_u(
     int4 j;
     for (int k = 0; k < 3; ++k) {
         j = (int4) {k, i.s1, i.s2, i.s3};
+
+        #if DNS
         result += dxj_rho_ui_uj(i, j, rho, u) + dxi_p(i, j, p) + dxj_BiBj(i, j, B);
-            // + dxj_tau_u_ji(i, j, rho, u);
+
+        #elif SMAGORINSKY
+        result += dxj_rho_ui_uj(i, j, rho, u) + dxi_p(i, j, p) + dxj_BiBj(i, j, B)
+            + dxj_tau_u_ji(i, j, rho, u);
+        #elif CROSS_HELICITY
+        result += dxj_rho_ui_uj(i, j, rho, u) + dxi_p(i, j, p) + dxj_BiBj(i, j, B)
             + dxj_tau_u_lk_cross(j, j, i, rho, u, B);
-            // + 0;
+        #endif
     }
     return result;
 }
@@ -51,18 +58,25 @@ double diff_u(
 }
 
 double flux_B(int4 i, global double *u, global double *B) {
-     double result;
+    double result;
     result = 0.0;
 
-     int4 j;
+    int4 j;
     for (int k = 0; k < 3; ++k) {
         j = (int4) {k, i.s1, i.s2, i.s3};
+        
+        #if DNS
         result += dxj_ujBi(i, j, u, B) - dxj_uiBj(i, j, u, B);
-            // + dxj_tauB_ji(i, j, B);
+        #elif SMAGORINSKY
+        result += dxj_ujBi(i, j, u, B) - dxj_uiBj(i, j, u, B)
+            + dxj_tauB_ji(i, j, B);
+        #elif CROSS_HELICITY
+        result += dxj_ujBi(i, j, u, B) - dxj_uiBj(i, j, u, B)
             + dxj_tauB_ji_cross(i, j, u, B);
-            // + 0;
+        #endif
     }
 
+    // return 0;
     return result;
 }
 

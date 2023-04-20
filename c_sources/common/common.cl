@@ -85,7 +85,7 @@ double dxj_S_kl(int4 j, int4 k, int4 l, global double* u) {
 }
 
 double dxj_sigma_ij(int4 i, int4 j, global double* u){
-    return (mu0 / Re) * ( 2*dxj_S_ij(i, j, u) - (2.0/3.0)*dxj_S_ij(i, j, u)*kron(i, j) );
+    return (1 / Re) * ( 2*dxj_S_ij(i, j, u) - (2.0/3.0)*dxj_S_ij(i, j, u)*kron(i, j) );
 }
 
 double dxj_ujBi(int4 i, int4 j, global double* u, global double* B) {
@@ -182,7 +182,8 @@ double dxj_tauB_ji(int4 i, int4 j, global double* B) {
     double3 _j = rot(j, B);
     double abs_j = length(_j);
 
-    result += dxj_abs_j(j, B) * J_ij(i, j, B) + dxi_J_jk(j, j, i, B)*abs_j;
+    if (fabs(abs_j) > 1e-20)
+        result += dxj_abs_j(j, B) * J_ij(i, j, B) + dxi_J_jk(j, j, i, B)*abs_j;
 
     return -2*D1*SGS_DELTA_QUAD*result;
 }
@@ -264,16 +265,19 @@ double dxj_abs_f_cross(int4 j, global double* u, global double* B) {
 double dxj_tau_u_ji(int4 i, int4 j, global double* rho, global double* u) {
     double result = 0;
     double abs_S = abs_S_u(i, u);
-    result += 2*Y1*SGS_DELTA_QUAD * (
-        dx_3D(rho, get_ax(j), get_sc_idx(i), get_h(j)) * abs_S * abs_S
-        + 2*rho[vec_buffer_idx(get_sc_idx(i))] * abs_S * dxj_abs_S(i, j, u)
-    ) * kron(i, j);
 
-    result += -2*C1*SGS_DELTA_QUAD * (
-        dx_3D(rho, get_ax(j), get_sc_idx(i), get_h(j)) * abs_S * S_ij(i, j, u)
-        + rho[vec_buffer_idx(get_sc_idx(i))] * S_ij(i, j, u) * dxj_abs_S(i, j, u)
-        + rho[vec_buffer_idx(get_sc_idx(i))] * abs_S * dxj_S_ij(i, j, u)
-    ) * anti_kron(i, j);
+    if (fabs(abs_S) > 1e-20) { 
+        result += 2*Y1*SGS_DELTA_QUAD * (
+            dx_3D(rho, get_ax(j), get_sc_idx(i), get_h(j)) * abs_S * abs_S
+            + 2*rho[vec_buffer_idx(get_sc_idx(i))] * abs_S * dxj_abs_S(i, j, u)
+        ) * kron(i, j);
+
+        result += -2*C1*SGS_DELTA_QUAD * (
+            dx_3D(rho, get_ax(j), get_sc_idx(i), get_h(j)) * abs_S * S_ij(i, j, u)
+            + rho[vec_buffer_idx(get_sc_idx(i))] * S_ij(i, j, u) * dxj_abs_S(i, j, u)
+            + rho[vec_buffer_idx(get_sc_idx(i))] * abs_S * dxj_S_ij(i, j, u)
+        ) * anti_kron(i, j);
+    }
 
     return result;
 }

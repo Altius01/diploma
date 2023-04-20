@@ -1,17 +1,9 @@
 #ifndef MHD_CONSTS
 #define MHD_CONSTS
 
-#define GHOST_CELLS 3
-
-#define TRUE_Nx 64
-#define TRUE_Ny 64
-#define TRUE_Nz 64
-
 #define Nx (TRUE_Nx + 2*GHOST_CELLS)
 #define Ny (TRUE_Ny + 2*GHOST_CELLS)
 #define Nz (TRUE_Nz + 2*GHOST_CELLS)
-
-#define L 2.0 * M_PI
 
 __constant double const hx = L*1.0/(double)(TRUE_Nx);
 __constant double const hy = L*1.0/(double)(TRUE_Ny);
@@ -21,36 +13,19 @@ __constant double const h[3] = {hx, hy, hz};
 
 __constant double const dV = hx*hy*hz;
 
-#define gamma (5.0/3.0)
-
-#define _B0 0.282094
-#define P0 gamma
-#define ro0 ( gamma*gamma )
 #define eps_p 0.01
-
-#define Cs 1.0
-#define Ca ( _B0 / ( 2.0*sqrt(M_PI)*gamma ) )
-
-#define Re 100.0
-#define Rem 100.0
-#define Ms 0.2
-
-#define U0 (double) (Ms * Cs)
-
-#define Ma  ( U0 / Ca )
-
-#define mu0  ( (ro0*U0*L)/Re )
 
 #define C1  0.17
 #define Y1  0.1
 #define D1  0.1
 
 #define C3  0.173
-#define Y3  0.0
+#define Y3  0.1
 #define D3  0.1
 
 #define SGS_DELTA_QUAD   (hx*hx + hy*hy + hz*hz)
 #define SGS_DELTA_ABS   sqrt(hx*hx + hy*hy + hz*hz)
+
 
 int t_vec_buffer_idx(int4 i) {
     int ax = i.s0;
