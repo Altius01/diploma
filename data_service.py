@@ -36,6 +36,7 @@ class DataService:
 
     def get_or_create_dir(self, path: Path) -> Path:
         abs_path = Path(f"{self.dir_name}") / path
+
         if not abs_path.exists():
             abs_path.mkdir(parents=True, exist_ok=True)
         return abs_path
@@ -83,6 +84,7 @@ class DataService:
 
     def get_energy(self):
         path = self.get_or_create_dir("energy/")
+
 
         with h5py.File(path / "e_kin.hdf5", "r") as f:
             kin_e = f['energy'][()]

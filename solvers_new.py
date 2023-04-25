@@ -12,36 +12,7 @@ from logger import Logger
 from cl_builder import CLBuilder
 from data_service import DataService
 
-@ti.func
-def get_sc_idx(vec_idx):
-    return [vec_idx[i] for i in range(len(vec_idx)-3, len(vec_idx))]
-
-@ti.kernel
-def filter_sc(src: ti.types.ndarray(), out: ti.types.ndarray(), filter_size: ti.i32):
-    for i in ti.grouped(out):
-        for j in ti.grouped(ti.ndrange(filter_size, filter_size, filter_size)):
-            l = i * filter_size + j[:]
-            ti.atomic_add(out[i], src[l])
-        out[i] /= filter_size**3
-
-@ti.kernel
-def filter_vec(src: ti.types.ndarray(), out: ti.types.ndarray(), filter_size: ti.i32):
-    for i in ti.grouped(out):
-        for j in ti.grouped(ti.ndrange(filter_size, filter_size, filter_size)):
-            l = i
-            l[1:] = l[1:] * filter_size + j[:]
-
-            ti.atomic_add(out[i], src[l])
-        out[i] /= filter_size**3
-
-@ti.kernel
-def filter_mat(src: ti.types.ndarray(), out: ti.types.ndarray(), filter_size: ti.i32):
-    for i in ti.grouped(out):
-        for j in ti.grouped(ti.ndrange(filter_size, filter_size, filter_size)):
-            l = i
-            l[2:] += l[2:] * filter_size + j[:]
-            ti.atomic_add(out[i], src[l])
-        out[i] /= filter_size**3
+from taichi_src.kernels.sgs_constants.sgs_constants_kernels import *
         
 def get_filtered_shape(shape, filter_size):
     ret = list(shape)
@@ -51,12 +22,14 @@ def get_filtered_shape(shape, filter_size):
 
 class MHD_Solver:
     def __init__(self, context, config, data_path=''):
-        ti.init(arch=ti.gpu, debug=True)
+        self.C = 0
+        self.Y = 0
+        self.D = 0
+
         self.config = config
 
         self.context = context
         self.queue = cl.CommandQueue(self.context)
-        print(self.context)
         self.program = CLBuilder.build(self.context, self.config.defines)
 
         self._init_device_data()
@@ -64,12 +37,20 @@ class MHD_Solver:
 
         self.data_service = DataService(dir_name=data_path,rw_energy=self.config.rewrite_energy)
 
+        ti.init(arch=ti.vulkan, debug=True)
+        self.init_taichi_arrs()
+
     def _define_kernels(self):
         self.knl_kin_e = self.program.kin_energy
         self.knl_mag_e = self.program.mag_energy
         self.knl_solve = self.program.solver_3D_RK
         self.knl_ghosts = self.program.ghost_nodes_periodic
         self.knl_initial = self.program.Orszag_Tang_3D_inital
+
+        self.knl_get_J = self.program.get_J
+        self.knl_get_S = self.program.get_S
+        self.knl_get_phi = self.program.get_phi
+        self.knl_get_alpha = self.program.get_alpha
 
     def _init_device_data(self):
         self.p_gpu = cla.to_device(self.queue, ary=np.zeros(self.config.shape).astype(np.float64))
@@ -86,6 +67,11 @@ class MHD_Solver:
         self.rk2_gpu = cla.empty(self.queue, self.rho_gpu.shape, dtype=np.float64)
         self.uk2_gpu = cla.empty(self.queue, self.u_gpu.shape, dtype=np.float64)
         self.Bk2_gpu = cla.empty(self.queue, self.B_gpu.shape, dtype=np.float64)
+
+        self.S_gpu = cla.to_device(self.queue, ary=np.zeros(self.config.mat_shape).astype(np.float64))
+        self.J_gpu = cla.to_device(self.queue, ary=np.zeros(self.config.mat_shape).astype(np.float64))
+        self.phi_gpu = cla.to_device(self.queue, ary=np.zeros(self.config.mat_shape).astype(np.float64))
+        self.alpha_gpu = cla.to_device(self.queue, ary=np.zeros(self.config.mat_shape).astype(np.float64))
 
     def read_file(self, i):
         self.current_time, rho_, p_, u_, B_ = self.data_service.read_data(i)
@@ -122,6 +108,9 @@ class MHD_Solver:
             self.current_step += 1
             self._step(dT)
 
+            if self.config.model.lower() != 'dns':
+                self.compute_coefs()
+
             if self.current_step % self.config.rw_del == 0:
                 self.save_file(self.current_step)
                 
@@ -149,144 +138,271 @@ class MHD_Solver:
                     ret.append(self._get_v_idx(ax, x, y, z))
 
         return np.array(ret, dtype=np.int32)
-    
-    def get_Lu(self, filter_size=8):
-        u = ti.ndarray(dtype=ti.float64, shape=self.u_gpu.shape)
-        B = ti.ndarray(dtype=ti.float64, shape=self.B_gpu.shape)
-        p = ti.ndarray(dtype=ti.float64, shape=self.p_gpu.shape)
-        rho = ti.ndarray(dtype=ti.float64, shape=self.rho_gpu.shape)
 
-        u.from_numpy(self.u_gpu.get())
-        B.from_numpy(self.B_gpu.get())
-        p.from_numpy(self.p_gpu.get())
-        rho.from_numpy(self.rho_gpu.get())
+    def init_taichi_arrs(self):
+        self.Ma = 1.1
+        self.FILTER_SIZE = 2
 
-        u_filter = ti.ndarray(dtype=ti.float64, shape=get_filtered_shape(self.u_gpu.shape, filter_size))
-        B_filter = ti.ndarray(dtype=ti.float64, shape=get_filtered_shape(self.B_gpu.shape, filter_size))
-        p_filter = ti.ndarray(dtype=ti.float64, shape=get_filtered_shape(self.p_gpu.shape, filter_size))
-        rho_filter = ti.ndarray(dtype=ti.float64, shape=get_filtered_shape(self.rho_gpu.shape, filter_size))
+        self.u_ti = ti.ndarray(dtype=ti.float64, shape=self.u_gpu.shape)
+        self.B_ti = ti.ndarray(dtype=ti.float64, shape=self.B_gpu.shape)
+        self.rho_ti = ti.ndarray(dtype=ti.float64, shape=self.rho_gpu.shape)
 
-        FILTER_SIZE = 8
+        self.S_ti = ti.ndarray(dtype=ti.f64, shape=self.alpha_gpu.shape)
+        self.J_ti = ti.ndarray(dtype=ti.f64, shape=self.alpha_gpu.shape)
+        self.phi_ti = ti.ndarray(dtype=ti.f64, shape=self.phi_gpu.shape)
+        self.alpha_ti = ti.ndarray(dtype=ti.f64, shape=self.alpha_gpu.shape)
 
-        filter_sc(p, p_filter, FILTER_SIZE)
-        filter_sc(rho, rho_filter, FILTER_SIZE)
-        filter_vec(u, u_filter, FILTER_SIZE)
-        filter_vec(B, B_filter, FILTER_SIZE)
 
-        @ti.kernel
-        def rho_u(rho: ti.types.ndarray(), u: ti.types.ndarray(), result: ti.types.ndarray()):
-            for i in ti.grouped(result):
-                result[i] = rho[get_sc_idx(i)]*u[i]
+        self.u_ti_filter = ti.ndarray(dtype=ti.float64, shape=get_filtered_shape(self.u_gpu.shape, self.FILTER_SIZE))
+        self.B_ti_filter = ti.ndarray(dtype=ti.float64, shape=get_filtered_shape(self.B_gpu.shape, self.FILTER_SIZE))
+        self.rho_ti_filter = ti.ndarray(dtype=ti.float64, shape=get_filtered_shape(self.rho_gpu.shape, self.FILTER_SIZE))
 
-        @ti.kernel
-        def BiBj(B: ti.types.ndarray(), result: ti.types.ndarray()):
-            for idx in ti.grouped(result):
-                i, j, x, y, z = idx
-                result[idx] = B[i, x, y, z]*B[j, x, y, z]
+        self.S_ti_filter = ti.ndarray(dtype=ti.f64, shape=get_filtered_shape(self.alpha_gpu.shape, self.FILTER_SIZE))
+        self.J_ti_filter = ti.ndarray(dtype=ti.f64, shape=get_filtered_shape(self.alpha_gpu.shape, self.FILTER_SIZE))
+        self.phi_ti_filter = ti.ndarray(dtype=ti.f64, shape=get_filtered_shape(self.phi_gpu.shape, self.FILTER_SIZE))
+        self.alpha_ti_filter = ti.ndarray(dtype=ti.f64, shape=get_filtered_shape(self.alpha_gpu.shape, self.FILTER_SIZE))
 
-        @ti.kernel
-        def Lu_A(rho: ti.types.ndarray(), rho_u: ti.types.ndarray(), result: ti.types.ndarray()):
-            for idx in ti.grouped(result):
-                i, j, x, y, z = idx
-                result[idx] = (rho_u[i, x, y, z] * rho_u[j, x, y, z]) / rho[get_sc_idx(idx)]
+    def update_ti_arrs(self):
+        self.u_ti.from_numpy(self.u_gpu.get())
+        self.B_ti.from_numpy(self.B_gpu.get())
+        self.rho_ti.from_numpy(self.rho_gpu.get())
 
-        @ti.kernel
-        def Lb_A(rho_u: ti.types.ndarray(), B: ti.types.ndarray(), result: ti.types.ndarray()):
-            for idx in ti.grouped(result):
-                i, j, x, y, z = idx
-                result[idx] = (rho_u[i, x, y, z] * B[j, x, y, z]) / rho[get_sc_idx(idx)]
+        self.S_ti.from_numpy(self.S_gpu.get())
+        self.J_ti.from_numpy(self.J_gpu.get())
+        self.alpha_ti.from_numpy(self.alpha_gpu.get())
+        self.phi_ti.from_numpy(self.phi_gpu.get())
 
-        Lu = ti.ndarray(dtype=ti.float64, shape=(3, 3, ) + self.config.shape)
-        Lu_filter = ti.ndarray(dtype=ti.float64, shape=get_filtered_shape(Lu.shape, FILTER_SIZE))
+        filter_sc(self.rho_ti, self.rho_ti_filter, self.FILTER_SIZE)
+        filter_vec(self.u_ti, self.u_ti_filter, self.FILTER_SIZE)
+        filter_vec(self.B_ti, self.B_ti_filter, self.FILTER_SIZE)
+
+        filter_mat(self.S_ti, self.S_ti_filter, self.FILTER_SIZE)
+        filter_mat(self.J_ti, self.J_ti_filter, self.FILTER_SIZE)
+        filter_mat(self.phi_ti, self.phi_ti_filter, self.FILTER_SIZE)
+        filter_mat(self.alpha_ti, self.alpha_ti_filter, self.FILTER_SIZE)
+
+    def get_Lu(self):
+        # Lu = ti.ndarray(dtype=ti.float64, shape=(3, 3, ) + self.config.shape)
+        Lu_filter = ti.ndarray(dtype=ti.float64, shape=get_filtered_shape(self.config.mat_shape, self.FILTER_SIZE))
 
 
         rho_u_ = ti.ndarray(dtype=ti.f64, shape=self.config.v_shape)
-        rho_u_filter = ti.ndarray(dtype=ti.f64, shape=get_filtered_shape(self.config.v_shape, FILTER_SIZE))
-        rho_u(rho, u, rho_u_)
+        rho_u_filter = ti.ndarray(dtype=ti.f64, shape=get_filtered_shape(self.config.v_shape, self.FILTER_SIZE))
+        rho_u(self.rho_ti, self.u_ti, rho_u_)
 
-        filter_vec(rho_u_, rho_u_filter, FILTER_SIZE)
+        filter_vec(rho_u_, rho_u_filter, self.FILTER_SIZE)
 
 
-        Lu_a_ = ti.ndarray(dtype=ti.f64, shape=Lu.shape)
-        Lu_A(rho, rho_u_, Lu_a_)
-        Lu_a_filter = ti.ndarray(dtype=ti.f64, shape=get_filtered_shape(Lu.shape, FILTER_SIZE))
+        Lu_a_ = ti.ndarray(dtype=ti.f64, shape=self.config.mat_shape)
+        Lu_A(self.rho_ti, rho_u_, Lu_a_)
+        Lu_a_filter = ti.ndarray(dtype=ti.f64, shape=get_filtered_shape(self.config.mat_shape, self.FILTER_SIZE))
 
-        filter_mat(Lu_a_, Lu_a_filter, FILTER_SIZE)
+        filter_mat(Lu_a_, Lu_a_filter, self.FILTER_SIZE)
 
-        Lu_a_ = ti.ndarray(dtype=ti.f64, shape=get_filtered_shape(Lu.shape, FILTER_SIZE))
+        Lu_a_ = ti.ndarray(dtype=ti.f64, shape=get_filtered_shape(self.config.mat_shape, self.FILTER_SIZE))
 
-        Lu_A(rho_filter, rho_u_filter, Lu_a_)
+        Lu_A(self.rho_ti_filter, rho_u_filter, Lu_a_)
 
-        BiBj_ = ti.ndarray(dtype=ti.f64, shape=Lu.shape)
-        BiBj_filter = ti.ndarray(dtype=ti.f64, shape=get_filtered_shape(Lu.shape, FILTER_SIZE))
-        BiBj(B, BiBj_)
-        filter_mat(BiBj_, BiBj_filter, FILTER_SIZE)
+        BiBj_ = ti.ndarray(dtype=ti.f64, shape=self.config.mat_shape)
+        BiBj_filter = ti.ndarray(dtype=ti.f64, shape=get_filtered_shape(self.config.mat_shape, self.FILTER_SIZE))
+        BiBj(self.B_ti, BiBj_)
+        filter_mat(BiBj_, BiBj_filter, self.FILTER_SIZE)
 
-        BiBj_ = ti.ndarray(dtype=ti.f64, shape=get_filtered_shape(Lu.shape, FILTER_SIZE))
+        BiBj_ = ti.ndarray(dtype=ti.f64, shape=get_filtered_shape(self.config.mat_shape, self.FILTER_SIZE))
 
-        BiBj(B_filter, BiBj_)
+        BiBj(self.B_ti_filter, BiBj_)        
 
-        Ma = 1.1
+        Lu_compute(self.Ma, Lu_filter, BiBj_, BiBj_filter, Lu_a_, Lu_a_filter)
+        return Lu_filter
+
+    def get_Lb(self):
+        # Lb = ti.ndarray(dtype=ti.float64, shape=self.config.mat_shape)
+        Lb_filter = ti.ndarray(dtype=ti.float64, shape=get_filtered_shape(self.config.mat_shape, self.FILTER_SIZE))
+        Lb_filter2 = ti.ndarray(dtype=ti.float64, shape=get_filtered_shape(self.config.mat_shape, self.FILTER_SIZE))
+
+
+        rho_u_ = ti.ndarray(dtype=ti.f64, shape=self.config.v_shape)
+        rho_u_filter = ti.ndarray(dtype=ti.f64, shape=get_filtered_shape(self.config.v_shape, self.FILTER_SIZE))
+        rho_u(self.rho_ti, self.u_ti, rho_u_)
+
+        filter_vec(rho_u_, rho_u_filter, self.FILTER_SIZE)
+
+        Lb_a = ti.ndarray(dtype=ti.f64, shape=self.config.mat_shape)
+        Lb_A(self.rho_ti, rho_u_, self.B_ti, Lb_a)
+
+        Lb_a_filtered = ti.ndarray(dtype=ti.f64, shape=get_filtered_shape(self.config.mat_shape, self.FILTER_SIZE))
+        filter_mat(Lb_a, Lb_a_filtered, self.FILTER_SIZE)
+
+        Lb_a = ti.ndarray(dtype=ti.f64, shape=get_filtered_shape(self.config.mat_shape, self.FILTER_SIZE))
+        Lb_A(self.rho_ti, rho_u_filter, self.B_ti_filter, Lb_a)
+
+        Lb = ti.ndarray(dtype=ti.f64, shape=get_filtered_shape(self.config.mat_shape, self.FILTER_SIZE))
+
+        Lb_compute(Lb, Lb_a, Lb_a_filtered)
+        return Lb
+
+    def get_phi(self):
+        evt = self.knl_get_phi(self.queue, self.config.true_shape, None,
+                                    self.u_gpu.data, self.B_gpu.data, self.phi_gpu.data)
+        evt.wait()
+
+
+    def get_alpha(self):
+        evt = self.knl_get_alpha(self.queue, self.config.true_shape, None,
+                                    self.rho_gpu.data, self.u_gpu.data,
+                                        self.B_gpu.data, self.alpha_gpu.data)
+        evt.wait()
+
+    def get_S(self):
+        evt = self.knl_get_S(self.queue, self.config.true_shape, None,
+                                    self.u_gpu.data, self.S_gpu.data)
+        evt.wait()
+
+    def get_J(self):
+        evt = self.knl_get_J(self.queue, self.config.true_shape, None, 
+                                self.B_gpu.data, self.J_gpu.data)
+        evt.wait()
+        
+
+    def get_M(self):
+        M_ti = ti.ndarray(dtype=ti.f64, shape=get_filtered_shape(self.config.mat_shape, self.FILTER_SIZE))
+
+        M_A_ti = ti.ndarray(dtype=ti.f64, shape=self.config.mat_shape)
+        M_A_ti_filter = ti.ndarray(dtype=ti.f64, shape=get_filtered_shape(self.config.mat_shape, self.FILTER_SIZE))
+
+        M_A_compute(M_A_ti, self.alpha_ti, self.S_ti)
+        filter_mat(M_A_ti, M_A_ti_filter, self.FILTER_SIZE)
+
+        M_A_ti = ti.ndarray(dtype=ti.f64, shape=get_filtered_shape(self.config.mat_shape, self.FILTER_SIZE))
+        M_A_compute(M_A_ti, self.alpha_ti_filter, self.S_ti_filter)
+
+        M_compute(M_ti, M_A_ti, M_A_ti_filter)
+        return M_ti
+
+    def get_m(self):
+        m_ti = ti.ndarray(dtype=ti.f64, shape=get_filtered_shape(self.config.mat_shape, self.FILTER_SIZE))
+
+        m_A_ti = ti.ndarray(dtype=ti.f64, shape=self.config.mat_shape)
+        m_A_ti_filter = ti.ndarray(dtype=ti.f64, shape=get_filtered_shape(self.config.mat_shape, self.FILTER_SIZE))
+
+        m_A_compute(m_A_ti, self.phi_ti, self.J_ti)
+        filter_mat(m_A_ti, m_A_ti_filter, self.FILTER_SIZE)
+
+        m_A_ti = ti.ndarray(dtype=ti.f64, shape=get_filtered_shape(self.config.mat_shape, self.FILTER_SIZE))
+        m_A_compute(m_A_ti, self.phi_ti_filter, self.J_ti_filter)
+
+        M_compute(m_ti, m_A_ti, m_A_ti_filter)
+        return m_ti
+
+    def compute_coefs(self):
+        self.get_S()
+        self.get_J()
+        self.get_phi()
+        self.get_alpha()
+
+        self.update_ti_arrs()
+
+        Lu = self.get_Lu()
+        Lb = self.get_Lb()
+        
+        M = self.get_M()
+        m = self.get_m()
+
+        MM = ti.ndarray(dtype=ti.f64, shape=get_filtered_shape(self.config.shape, self.FILTER_SIZE))
+        MM.fill(0)
+        mat_dot(M, M, MM)
+
+        mm = ti.ndarray(dtype=ti.f64, shape=get_filtered_shape(self.config.shape, self.FILTER_SIZE))
+        mm.fill(0)
+        mat_dot(m, m, mm)
+
+        LuM = ti.ndarray(dtype=ti.f64, shape=get_filtered_shape(self.config.shape, self.FILTER_SIZE))
+        LuM.fill(0)
+        mat_dot(Lu, M, LuM)
+
+        Lbm = ti.ndarray(dtype=ti.f64, shape=get_filtered_shape(self.config.shape, self.FILTER_SIZE))
+        Lbm.fill(0)
+        mat_dot(Lb, m, Lbm)
+
+        LuLu = ti.ndarray(dtype=ti.f64, shape=get_filtered_shape(self.config.shape, self.FILTER_SIZE))
+        LuLu.fill(0)
+        mat_trace_dot(Lu, Lu, LuLu)
+
         @ti.kernel
-        def Lu_compute(Lu: ti.types.ndarray(),
-                       BiBj_: ti.types.ndarray(),
-                       BiBj_filter: ti.types.ndarray(),
-                       Lu_A_: ti.types.ndarray(),
-                       Lu_A_filter: ti.types.ndarray(),):
-            print(Lu_A_filter.shape)
-            for idx in ti.grouped(Lu):
-                Lu[idx] = Lu_A_filter[idx] - Lu_A_[idx] - (BiBj_filter[idx] - BiBj_[idx])/Ma**2
+        def aS_compute(alpha: ti.types.ndarray(), 
+                        abs_S: ti.types.ndarray(), 
+                        result: ti.types.ndarray()):
+            for idx in ti.grouped(alpha):
+                i, j, x, y, z = idx
+                if i == j:
+                    result[x, y, z] = result[x, y, z] + alpha[idx] * abs_S[x, y, z]
 
-        Lu_compute(Lu_filter, BiBj_, BiBj_filter, Lu_a_, Lu_a_filter)
+        abs_S = ti.ndarray(dtype=ti.f64, shape=self.config.shape)
+        abs_S_filter = ti.ndarray(dtype=ti.f64, shape=get_filtered_shape(self.config.shape, self.FILTER_SIZE))
+        abs_S_compute(self.S_ti, abs_S)
+        filter_sc(abs_S, abs_S_filter, self.FILTER_SIZE)
+
+        aS = ti.ndarray(dtype=ti.f64, shape=self.config.shape)
+        aS_filter = ti.ndarray(dtype=ti.f64, shape=get_filtered_shape(self.config.shape, self.FILTER_SIZE))
+        aS_compute(self.alpha_ti, abs_S, aS)
+        filter_sc(aS, aS_filter, self.FILTER_SIZE)
+
+        aS = ti.ndarray(dtype=ti.f64, shape=get_filtered_shape(self.config.shape, self.FILTER_SIZE))
+        aS_compute(self.alpha_ti_filter, abs_S_filter, aS)
+
+        @ti.kernel
+        def Y_denominator(A: ti.types.ndarray(), A_filter: ti.types.ndarray(), result: ti.types.ndarray()):
+            for idx in ti.grouped(result):
+                result[idx] = A[idx] - A_filter[idx]
+
+        Y_d = ti.ndarray(dtype=ti.f64, shape=get_filtered_shape(self.config.shape, self.FILTER_SIZE))
+        Y_denominator(aS, aS_filter, Y_d)
 
 
+        # MM_mean = ti.field(ti.f64, shape=())
+        # mm_mean = ti.field(ti.f64, shape=())
+        # Y_d_mean = ti.field(ti.f64, shape=())
 
-    def _les_filter(self, arr: cla.Array, filter_size=2):
-        filter_shape = tuple([filter_size, filter_size, filter_size])
-        new_shape = tuple(s//filter_size for s in self.config.shape)
-        Logger.log(new_shape)
-        filtered_arr = cla.empty(self.queue, new_shape, dtype=arr.dtype)
+        # LuM_mean = ti.field(ti.f64, shape=())
+        # LuLu_mean = ti.field(ti.f64, shape=())
+        # Lbm_mean = ti.field(ti.f64, shape=())
 
-        ary = cla.empty(self.queue, filter_shape, dtype=np.float64)
-        dest_idx = cla.to_device(self.queue, ary=np.arange(0, prod(filter_shape), dtype=np.int32))
-        for x in range(new_shape[0]):
-            for y in range(new_shape[1]):
-                for z in range(new_shape[2]):
-                    # Logger.log(f"Map from [{x*filter_size}:{(x+1)*filter_size},\
-                    #  {y*filter_size}:{(y+1)*filter_size}, \
-                    # {z*filter_size}:{(z+1)*filter_size}] to [{x},{y},{z}]")
-                    host_src_idx = self._get_list_idx(x0=x*filter_size, x1=(x+1)*filter_size, 
-                                                      y0=y*filter_size, y1=(y+1)*filter_size, 
-                                                      z0=z*filter_size, z1=(z+1)*filter_size)
-                    src_idx = cla.to_device(queue=self.queue, ary=host_src_idx)
-                    cla.multi_take_put(queue=self.queue, arrays=[arr], 
-                                       src_indices=src_idx, dest_indices=dest_idx, out=[ary])
-                    filtered_arr[x, y, z] = cla.sum(queue=self.queue, a=ary) / prod(filter_shape)
-        return filtered_arr
-    
-    def _les_v_filter(self, arr: cla.Array, filter_size=2):
-        filter_shape = tuple([filter_size, filter_size, filter_size])
-        new_shape = (3, ) + tuple(s//filter_size for s in self.config.shape)
-        Logger.log(new_shape)
-        filtered_arr = cla.empty(self.queue, new_shape, dtype=arr.dtype)
+        # spatial_mean(LuM, LuM_mean, self.config.dV)
+        # spatial_mean(MM, MM_mean, self.config.dV)
+        # spatial_mean(LuLu, LuLu_mean, self.config.dV)
+        # spatial_mean(Y_d, Y_d_mean, self.config.dV)
+        # spatial_mean(Lbm, Lbm_mean, self.config.dV)
+        # spatial_mean(mm, mm_mean, self.config.dV)
 
-        ary = cla.empty(self.queue, filter_shape, dtype=np.float64)
-        dest_idx = cla.to_device(self.queue, ary=np.arange(0, prod(filter_shape), dtype=np.int32))
-        for ax in range(3):
-            for x in range(new_shape[0]):
-                for y in range(new_shape[1]):
-                    for z in range(new_shape[2]):
-                        # Logger.log(f"Map from [{ax}, {x*filter_size}:{(x+1)*filter_size},\
-                        #  {y*filter_size}:{(y+1)*filter_size}, \
-                        # {z*filter_size}:{(z+1)*filter_size}] to [{ax}, {x},{y},{z}]")
-                        host_src_idx = self._get_list_v_idx(ax, x0=x*filter_size, x1=(x+1)*filter_size, 
-                                                        y0=y*filter_size, y1=(y+1)*filter_size, 
-                                                        z0=z*filter_size, z1=(z+1)*filter_size)
-                        src_idx = cla.to_device(queue=self.queue, ary=host_src_idx)
-                        cla.multi_take_put(queue=self.queue, arrays=[arr], 
-                                        src_indices=src_idx, dest_indices=dest_idx, out=[ary])
-                        filtered_arr[ax, x, y, z] = cla.sum(queue=self.queue, a=ary) / prod(filter_shape)
-        return filtered_arr
+        # LuM_mean = LuM_mean.to_numpy()
+        # MM_mean = MM_mean.to_numpy()
+        # LuLu_mean = LuLu_mean.to_numpy()
+        # Y_d_mean = Y_d_mean.to_numpy()
+        # mm_mean = mm_mean.to_numpy()
+        # Lbm_mean = Lbm_mean.to_numpy()
+
+        LuM_mean = LuM.to_numpy()
+        MM_mean = MM.to_numpy()
+        LuLu_mean = LuLu.to_numpy()
+        Y_d_mean = Y_d.to_numpy()
+        mm_mean = mm.to_numpy()
+        Lbm_mean = Lbm.to_numpy()
+
+        
+
+        LuM_mean = LuM_mean.sum()*self.config.dV * self.FILTER_SIZE**3
+        MM_mean = MM_mean.sum()*self.config.dV * self.FILTER_SIZE**3
+        LuLu_mean = LuLu_mean.sum()*self.config.dV * self.FILTER_SIZE**3
+        Y_d_mean = Y_d_mean.sum()*self.config.dV * self.FILTER_SIZE**3
+        mm_mean = mm_mean.sum()*self.config.dV * self.FILTER_SIZE**3
+        Lbm_mean = Lbm_mean.sum()*self.config.dV * self.FILTER_SIZE**3
+
+        # Logger.log(f"LuM_mean: {LuM_mean}, LuLu_mean: {LuLu_mean}, Lbm_mean: {Lbm_mean}")
+        # Logger.log(f"MM_mean: {MM_mean}, Y_d_mean: {Y_d_mean}, mm_mean: {mm_mean}")
+
+        self.C =  LuM_mean / MM_mean
+        self.Y =  LuLu_mean / Y_d_mean
+        self.D =  Lbm_mean / mm_mean
 
     def _step(self, dT):
         _p = [self.p_gpu, self.pk1_gpu, self.pk2_gpu]
@@ -298,6 +414,7 @@ class MHD_Solver:
 
         evt = self.knl_solve(self.queue, self.config.true_shape, None,
                             np.float64(dT), np.float64(coefs[0][0]), np.float64(coefs[0][1]),
+                            np.float64(self.Y), np.float64(self.C), np.float64(self.D),
                             _rho[2].data, _p[2].data, _u[2].data, _B[2].data,
                             _rho[0].data, _p[0].data, _u[0].data, _B[0].data,
                             _rho[1].data, _p[1].data, _u[1].data, _B[1].data,
@@ -308,6 +425,7 @@ class MHD_Solver:
 
         evt = self.knl_solve(self.queue, self.config.true_shape, None,
                             np.float64(dT), np.float64(coefs[1][0]), np.float64(coefs[1][1]),
+                            np.float64(self.Y), np.float64(self.C), np.float64(self.D),
                             _rho[0].data, _p[0].data, _u[0].data, _B[0].data,
                             _rho[1].data, _p[1].data, _u[1].data, _B[1].data,
                             _rho[2].data, _p[2].data, _u[2].data, _B[2].data,
@@ -318,6 +436,7 @@ class MHD_Solver:
 
         evt = self.knl_solve(self.queue, self.config.true_shape, None,
                             np.float64(dT), np.float64(coefs[2][0]), np.float64(coefs[2][1]),
+                            np.float64(self.Y), np.float64(self.C), np.float64(self.D),
                             _rho[0].data, _p[0].data, _u[0].data, _B[0].data,
                             _rho[2].data, _p[2].data, _u[2].data, _B[2].data,
                             _rho[1].data, _p[1].data, _u[1].data, _B[1].data,
@@ -348,4 +467,8 @@ class MHD_Solver:
                          self.rho_gpu.data, self.p_gpu.data, self.u_gpu.data, self.B_gpu.data)
         evt.wait()
         self._ghost_points(self.rho_gpu, self.p_gpu, self.u_gpu, self.B_gpu)
+
+        if self.config.model.lower() != 'dns':
+            self.compute_coefs()
+
         self.save_file(0)

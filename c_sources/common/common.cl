@@ -157,6 +157,10 @@ double3 dxj_j(int4 j, global double* B) {
     return rotor;
 }
 
+double abs_j(int4 i, global double* B) {
+    return length(rot(i, B));
+}
+
 double dxj_abs_j(int4 j, global double* B) {
     double3 _j = rot(j, B);
     double3 dx_j = dxj_j(j, B);
@@ -177,7 +181,7 @@ double dxj_abs_jw(int4 j, global double* u, global double* B) {
 }
 
 
-double dxj_tauB_ji(int4 i, int4 j, global double* B) {
+double dxj_tauB_ji(int4 i, int4 j, double D, global double* B) {
     double result = 0;
     double3 _j = rot(j, B);
     double abs_j = length(_j);
@@ -185,10 +189,10 @@ double dxj_tauB_ji(int4 i, int4 j, global double* B) {
     if (fabs(abs_j) > 1e-20)
         result += dxj_abs_j(j, B) * J_ij(i, j, B) + dxi_J_jk(j, j, i, B)*abs_j;
 
-    return -2*D1*SGS_DELTA_QUAD*result;
+    return -2*D*SGS_DELTA_QUAD*result;
 }
 
-double dxj_tauB_ji_cross(int4 i, int4 j, global double* u, global double* B) {
+double dxj_tauB_ji_cross(int4 i, int4 j, double D, global double* u, global double* B) {
     double result = 0;
     double3 _j = rot(j, B);
     double3 _w = rot(j, u);
@@ -199,7 +203,7 @@ double dxj_tauB_ji_cross(int4 i, int4 j, global double* u, global double* B) {
 
     result += dxj_abs_jw(j, u, B) * J_ij(i, j, B) + dxi_J_jk(j, j, i, B)*abs_jw;
 
-    return -2*D3*SGS_DELTA_QUAD*sgn*result;
+    return -2*D*SGS_DELTA_QUAD*sgn*result;
 }
 
 double abs_S_u(int4 i, global double* u){
@@ -262,17 +266,17 @@ double dxj_abs_f_cross(int4 j, global double* u, global double* B) {
     return ( result / (2*abs + 1e-6) );
 }
 
-double dxj_tau_u_ji(int4 i, int4 j, global double* rho, global double* u) {
+double dxj_tau_u_ji(int4 i, int4 j, double Y, double C, global double* rho, global double* u) {
     double result = 0;
     double abs_S = abs_S_u(i, u);
 
     if (fabs(abs_S) > 1e-20) { 
-        result += 2*Y1*SGS_DELTA_QUAD * (
+        result += 2*Y*SGS_DELTA_QUAD * (
             dx_3D(rho, get_ax(j), get_sc_idx(i), get_h(j)) * abs_S * abs_S
             + 2*rho[vec_buffer_idx(get_sc_idx(i))] * abs_S * dxj_abs_S(i, j, u)
         ) * kron(i, j);
 
-        result += -2*C1*SGS_DELTA_QUAD * (
+        result += -2*C*SGS_DELTA_QUAD * (
             dx_3D(rho, get_ax(j), get_sc_idx(i), get_h(j)) * abs_S * S_ij(i, j, u)
             + rho[vec_buffer_idx(get_sc_idx(i))] * S_ij(i, j, u) * dxj_abs_S(i, j, u)
             + rho[vec_buffer_idx(get_sc_idx(i))] * abs_S * dxj_S_ij(i, j, u)
@@ -282,7 +286,7 @@ double dxj_tau_u_ji(int4 i, int4 j, global double* rho, global double* u) {
     return result;
 }
 
-double dxj_tau_u_lk_cross(int4 j, int4 l, int4 k, global double* rho, global double* u, global double* B) {
+double dxj_tau_u_lk_cross(int4 j, int4 l, int4 k, double Y, double C, global double* rho, global double* u, global double* B) {
     double result = 0;
     double abs_S = abs_S_u(l, u);
     double abs_f = abs_f_cross(l, u, B);
@@ -291,13 +295,13 @@ double dxj_tau_u_lk_cross(int4 j, int4 l, int4 k, global double* rho, global dou
 
     double rho_ = rho[vec_buffer_idx(get_sc_idx(l))];
 
-    result += 2*Y3*SGS_DELTA_QUAD * (
+    result += 2*Y*SGS_DELTA_QUAD * (
         dx_3D(rho, get_ax(j), get_sc_idx(l), get_h(j)) * abs_f * abs_S
         + rho_ * abs_f * dxj_abs_S(l, j, u)
         + rho_ * abs_S * dxj_abs_f
     ) * kron(l, k) * 0.0;
 
-    result += -2*C3*SGS_DELTA_QUAD * (
+    result += -2*C*SGS_DELTA_QUAD * (
         dx_3D(rho, get_ax(j), get_sc_idx(l), get_h(j)) * abs_f * S
         + rho_ * S * dxj_abs_f
         + rho_ * abs_f * dxj_S_kl(j, k, l, u)

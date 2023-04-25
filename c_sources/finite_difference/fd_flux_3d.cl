@@ -1,7 +1,7 @@
 #ifndef FD_FLUX_3D
 #define FD_FLUX_3D
 
-#include "..\common\common.cl"
+#include "../common/common.cl"
 
 double flux_rho(int4 i, global double* rho, global double* u) {
      double result;
@@ -16,7 +16,7 @@ double flux_rho(int4 i, global double* rho, global double* u) {
 }
 
 double flux_u(
-    int4 i, 
+    int4 i, double Y, double C,
     global double *u, global double *B,
     global double *rho, global double *p
 ) {
@@ -32,10 +32,10 @@ double flux_u(
 
         #elif SMAGORINSKY
         result += dxj_rho_ui_uj(i, j, rho, u) + dxi_p(i, j, p) + dxj_BiBj(i, j, B)
-            + dxj_tau_u_ji(i, j, rho, u);
+            + dxj_tau_u_ji(i, j, Y, C, rho, u);
         #elif CROSS_HELICITY
         result += dxj_rho_ui_uj(i, j, rho, u) + dxi_p(i, j, p) + dxj_BiBj(i, j, B)
-            + dxj_tau_u_lk_cross(j, j, i, rho, u, B);
+            + dxj_tau_u_lk_cross(j, j, i, Y, C, rho, u, B);
         #endif
     }
     return result;
@@ -57,7 +57,7 @@ double diff_u(
     return result;
 }
 
-double flux_B(int4 i, global double *u, global double *B) {
+double flux_B(int4 i, double D, global double *u, global double *B) {
     double result;
     result = 0.0;
 
@@ -69,10 +69,10 @@ double flux_B(int4 i, global double *u, global double *B) {
         result += dxj_ujBi(i, j, u, B) - dxj_uiBj(i, j, u, B);
         #elif SMAGORINSKY
         result += dxj_ujBi(i, j, u, B) - dxj_uiBj(i, j, u, B)
-            + dxj_tauB_ji(i, j, B);
+            + dxj_tauB_ji(i, j, D, B);
         #elif CROSS_HELICITY
         result += dxj_ujBi(i, j, u, B) - dxj_uiBj(i, j, u, B)
-            + dxj_tauB_ji_cross(i, j, u, B);
+            + dxj_tauB_ji_cross(i, j, D, u, B);
         #endif
     }
 

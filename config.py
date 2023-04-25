@@ -11,9 +11,12 @@ class Config:
     # geometry
     shape = ()
     v_shape = ()
+    mat_shape=()
     true_shape = ()
     true_v_shape = ()
+    true_mat_shape = ()
     domain_size = ()
+    dV = 0
     # end_time
     t_end = 0
     # steps count
@@ -61,14 +64,21 @@ class Config:
             self.true_shape = tuple(data.get('shape', (0, 0, 0,)))
 
             self.true_v_shape = (3, ) + self.true_shape
+            self.true_mat_shape = (3, 3, ) + self.true_shape
 
             self.domain_size = tuple(data.get('size', (1.0, 1.0, 1.0,)))
+
+            self.dV = 1
+            
+            for i in range(3):
+                self.dV *= self.domain_size[i] / self.true_shape[i]
 
             self.shape = (self.true_shape[0]+2*self.ghosts, 
                         self.true_shape[1]+2*self.ghosts, 
                         self.true_shape[2]+2*self.ghosts, )
             
             self.v_shape = (3, ) + self.shape
+            self.mat_shape = (3, 3, ) + self.shape
             
             self.end_time = data.get('end_time', 0)
 
@@ -76,7 +86,7 @@ class Config:
 
             self.start_step = data.get('start_step', 0)
 
-            self.model = data.get('model', 'dns')
+            self.model = data.get('model', 'DNS')
 
             self.initials = data.get("initials", "ot")
 

@@ -15,13 +15,13 @@ __constant double const dV = hx*hy*hz;
 
 #define eps_p 0.01
 
-#define C1  0.17
-#define Y1  0.1
-#define D1  0.1
+// #define C1  0.17
+// #define Y1  0.1
+// #define D1  0.1
 
-#define C3  0.173
-#define Y3  0.1
-#define D3  0.1
+// #define C3  0.173
+// #define Y3  0.1
+// #define D3  0.1
 
 #define SGS_DELTA_QUAD   (hx*hx + hy*hy + hz*hz)
 #define SGS_DELTA_ABS   sqrt(hx*hx + hy*hy + hz*hz)
@@ -36,6 +36,17 @@ int t_vec_buffer_idx(int4 i) {
     return ax*TRUE_Nx*TRUE_Ny*TRUE_Nz + x*TRUE_Ny*TRUE_Nz + y*TRUE_Nz + z;
 }
 
+int t_mat_buffer_idx(int8 idx) {
+    int i = idx.s0;
+    int j = idx.s1;
+    int x = idx.s2;
+    int y = idx.s3;
+    int z = idx.s4;
+
+    return (i*3 + j)*TRUE_Nx*TRUE_Ny*TRUE_Nz + x*TRUE_Ny*TRUE_Nz + y*TRUE_Nz + z;
+}
+
+
 int vec_buffer_idx(int4 i) {
     int ax = i.s0;
     int x = i.s1;
@@ -43,6 +54,16 @@ int vec_buffer_idx(int4 i) {
     int z = i.s3;
 
     return ax*Nx*Ny*Nz + x*Ny*Nz + y*Nz + z;
+}
+
+int mat_buffer_idx(int8 idx) {
+    int i = idx.s0;
+    int j = idx.s1;
+    int x = idx.s2;
+    int y = idx.s3;
+    int z = idx.s4;
+
+    return (i*3 + j)*Nx*Ny*Nz + x*Ny*Nz + y*Nz + z;
 }
 
 inline double kron(int4 i, int4 j) {

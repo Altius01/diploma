@@ -1,8 +1,8 @@
 #ifndef WENO_COMMON_3D
 #define WENO_COMMON_3D
 
-#include "..\common\utils_3d.cl "
-#include "..\common\mhd_consts.cl"
+#include "../common/utils_3d.cl"
+#include "../common/mhd_consts.cl"
 
 double rho_uj(int4 i, int4 j, global double *rho, global double *u) {
     int4 rho_idx = get_sc_idx(i);

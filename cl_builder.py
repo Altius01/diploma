@@ -13,6 +13,7 @@ class CLBuilder():
     def build(context, defines):
         Logger.log(f"Start building sources from: {source_dir}")
 
+        print(defines)
         with open((source_dir / 'main.cl'), 'r') as file:
             data = file.read()
             for name, value in defines:

@@ -82,25 +82,42 @@ def save_spectrum(solver, idx):
         dset = f.create_dataset("kin", data=(kin_k, kin_A), dtype=np.float64)
     pass
 
-DNS_256_DATA_PATH = Path.cwd() / 'DNS_256'
-DNS_256_CONFIG_PATH = Path.cwd() / 'dns_256_config.json'
 
-DNS_128_DATA_PATH = Path.cwd() / 'DNS_128'
-DNS_128_CONFIG_PATH = Path.cwd() / 'dns_128_config.json'
+PATH_CWD = Path('.')
+DNS_256_DATA_PATH =  PATH_CWD / 'DNS_256'
+DNS_256_CONFIG_PATH = PATH_CWD / 'dns_256_config.json'
 
-DNS_64_DATA_PATH = Path.cwd() / 'DNS_64'
-DNS_64_CONFIG_PATH = Path.cwd() / 'dns_64_config.json'
+DNS_128_DATA_PATH = PATH_CWD / 'DNS_128'
+DNS_128_CONFIG_PATH = PATH_CWD / 'dns_128_config.json'
 
-DNS_32_DATA_PATH = Path.cwd() / 'DNS_32'
-DNS_32_CONFIG_PATH = Path.cwd() / 'dns_32_config.json'
+DNS_64_DATA_PATH = PATH_CWD / 'DNS_64'
+DNS_64_CONFIG_PATH = PATH_CWD / 'dns_64_config.json'
+
+DNS_32_DATA_PATH = PATH_CWD / 'DNS_32'
+DNS_32_CONFIG_PATH = PATH_CWD / 'dns_32_config.json'
+
+SMAG_32_DATA_PATH = PATH_CWD / 'SMAG_32'
+SMAG_32_CONFIG_PATH = PATH_CWD / 'smag_32_config.json'
+
+CROSS_32_DATA_PATH = PATH_CWD / 'CROSS_32'
+CROSS_32_CONFIG_PATH = PATH_CWD / 'cross_32_config.json'
+
+DNS_42_DATA_PATH = PATH_CWD / 'DNS_42'
+DNS_42_CONFIG_PATH = PATH_CWD / 'dns_42_config.json'
 
 def main():
     ctx = cl.create_some_context()
+
+    cross_32_config = Config(file_path=CROSS_32_CONFIG_PATH)
+
+    smag_32_config = Config(file_path=SMAG_32_CONFIG_PATH)
 
     dns_32_config = Config(file_path=DNS_32_CONFIG_PATH)
     dns_64_config = Config(file_path=DNS_64_CONFIG_PATH)
     dns_128_config = Config(file_path=DNS_128_CONFIG_PATH)
     dns_256_config = Config(file_path=DNS_256_CONFIG_PATH)
+
+    dns_42_config = Config(file_path=DNS_42_CONFIG_PATH)
 
     # dns_256_solver = MHD_Solver(context=ctx, config=dns_256_config, 
     #                             data_path=DNS_256_DATA_PATH)
@@ -108,24 +125,47 @@ def main():
     #                             data_path=DNS_128_DATA_PATH)
     # dns_64_solver = MHD_Solver(context=ctx, config=dns_64_config, 
     #                             data_path=DNS_64_DATA_PATH)
-    dns_32_solver = MHD_Solver(context=ctx, config=dns_32_config, 
-                                data_path=DNS_32_DATA_PATH)
+    # dns_32_solver = MHD_Solver(context=ctx, config=dns_32_config, 
+    #                             data_path=DNS_32_DATA_PATH))
+
+    # dns_42_solver = MHD_Solver(context=ctx, config=dns_42_config, 
+    #                         data_path=DNS_42_DATA_PATH)
+
+    # smag_32_solver = MHD_Solver(context=ctx, config=smag_32_config, 
+                                # data_path=SMAG_32_DATA_PATH)
+
+    cross_32_solver = MHD_Solver(context=ctx, config=cross_32_config, 
+                                data_path=CROSS_32_DATA_PATH)
     
-    # dns_256_postprocess = MHD_DataProcessor(context=ctx, config=dns_256_config, 
-    #                                         data_path=DNS_256_DATA_PATH)
-    # dns_128_postprocess = MHD_DataProcessor(context=ctx, config=dns_128_config, 
-    #                                         data_path=DNS_128_DATA_PATH)
-    # dns_64_postprocess = MHD_DataProcessor(context=ctx, config=dns_64_config, 
-    #                                         data_path=DNS_64_DATA_PATH)
-    # dns_32_postprocess = MHD_DataProcessor(context=ctx, config=dns_32_config, 
-    #                                         data_path=DNS_32_DATA_PATH)
+    dns_256_postprocess = MHD_DataProcessor(context=ctx, config=dns_256_config, 
+                                            data_path=DNS_256_DATA_PATH)
+    dns_128_postprocess = MHD_DataProcessor(context=ctx, config=dns_128_config, 
+                                            data_path=DNS_128_DATA_PATH)
+    dns_64_postprocess = MHD_DataProcessor(context=ctx, config=dns_64_config, 
+                                            data_path=DNS_64_DATA_PATH)
+    dns_32_postprocess = MHD_DataProcessor(context=ctx, config=dns_32_config, 
+                                            data_path=DNS_32_DATA_PATH)
+
+    dns_42_postprocess = MHD_DataProcessor(context=ctx, config=dns_42_config, 
+                                            data_path=DNS_42_DATA_PATH)
+
+    smag_32_postprocess = MHD_DataProcessor(context=ctx, config=smag_32_config, 
+                                            data_path=SMAG_32_DATA_PATH)
+
+    cross_32_postprocess = MHD_DataProcessor(context=ctx, config=cross_32_config, 
+                                data_path=CROSS_32_DATA_PATH)
     
-    dns_32_solver.read_file(1)
-    # dns_32_solver._les_filter(dns_32_solver.rho_gpu)
-    # dns_32_solver._les_v_filter(dns_32_solver.B_gpu)
-    dns_32_solver.get_Lu()
+    # smag_32_solver.solve()
+    # smag_32_postprocess.compute_energy_only()
+
+    # cross_32_solver.solve()
+    # cross_32_postprocess.compute_energy_only()
+
     # dns_32_solver.solve()
     # dns_32_postprocess.compute_energy_only()
+
+    # dns_42_solver.solve()
+    # dns_42_postprocess.compute_energy_only()
 
     # dns_64_solver.solve()
     # dns_64_postprocess.compute_energy_only()
@@ -136,8 +176,39 @@ def main():
     # dns_256_solver.solve()
     # dns_256_postprocess.compute_energy_only()
 
-    # plot_energies([dns_32_postprocess, dns_64_postprocess, dns_128_postprocess, dns_256_postprocess])
+    postprocesses = [
+        dns_32_postprocess, dns_64_postprocess, 
+        dns_128_postprocess, dns_256_postprocess, 
+        smag_32_postprocess, cross_32_postprocess,
+        dns_42_postprocess,
+    ]
 
+    plot_energies(postprocesses)
+
+def taichi_playground():
+    import taichi as ti
+
+    ti.init(arch=ti.cpu)
+
+    a = ti.field(dtype=ti.f32, shape=[3, 3, 3])
+    a.fill(1)
+    b = ti.field(dtype=ti.f32, shape=[3, 3, 3])
+    b.fill(2)
+
+    c = ti.field(dtype=ti.f32, shape=())
+
+    @ti.func
+    def foo(i):
+        return a[i] + b[i]
+
+    @ti.kernel
+    def knl(f: ti.template()):
+        for i in ti.grouped(ti.ndrange(3, 3, 3)):
+            c[None] += f(i)
+
+    knl(foo)
+
+    print(c.to_numpy())
 
 def plot_energies(posprocesses: list[MHD_DataProcessor]):
     kin_e = []
@@ -145,7 +216,9 @@ def plot_energies(posprocesses: list[MHD_DataProcessor]):
     time = []
     labels = []
     for p in posprocesses:
-        label = f'dns: {p.config.true_shape[0]}'
+        label = ''
+        label = f'{p.config.model}: {p.config.true_shape[0]}'
+
         e_k, e_m, t = p.get_energy()
         time.append(t)
         labels.append(label)
@@ -156,10 +229,10 @@ def plot_energies(posprocesses: list[MHD_DataProcessor]):
     for i in range(len(kin_e)):
         plt.scatter(time[i], kin_e[i], label=labels[i])
     
-    plt.gca().set(xlabel='Time', ylabel='Kinetic energy')
+    plt.gca().set(xlabel='t', ylabel='Кинетическая энергия')
 
     plt.xticks(fontsize=12); plt.yticks(fontsize=12)
-    plt.title("Plot of kinetic enegy by time", fontsize=22)
+    plt.title("Зависимость кинетической энергии от времени, Re=100, Rem=100, Ma=0.2", fontsize=22)
     plt.legend(fontsize=12)    
     plt.show()  
     plt.cla()
@@ -168,12 +241,27 @@ def plot_energies(posprocesses: list[MHD_DataProcessor]):
     for i in range(len(mag_e)):
         plt.scatter(time[i], mag_e[i], label=labels[i])
     
-    plt.gca().set(xlabel='Time', ylabel='Magnetic energy')
+    plt.gca().set(xlabel='t', ylabel='Магнитная энергия')
 
     plt.xticks(fontsize=12); plt.yticks(fontsize=12)
-    plt.title("Plot of magnetic enegy by time", fontsize=22)
-    plt.legend(fontsize=12)    
-    plt.show()  
+    plt.title("Зависимость магнитной энергии от времени, Re=100, Rem=100, Ma=0.2", fontsize=22)
+    plt.legend(fontsize=12)
+    plt.show()
+    plt.cla()
+    
+    import core_math.fft.pyfft as pyfft
+
+    plt.figure(figsize=(16, 10), dpi= 80, facecolor='w', edgecolor='k')
+    for i in range(len(kin_e)):
+        plt.scatter(time[i], pyfft.fftn(arr=e_k[i]), label=labels[i])
+    
+    plt.gca().set(xlabel='k', ylabel='Спект кинетической энергии')
+
+    plt.xticks(fontsize=12); plt.yticks(fontsize=12)
+    plt.title("Спектр кинетической энергии", fontsize=22)
+    plt.legend(fontsize=12)
+    plt.show()
+    plt.cla()
 
 
 if __name__ == "__main__":
@@ -181,4 +269,5 @@ if __name__ == "__main__":
     os.environ['PYOPENCL_NO_CACHE'] = '1'
     os.environ['PYOPENCL_COMPILER_OUTPUT'] = '1'
     
-    main()
+    # main()
+    taichi_playground()
