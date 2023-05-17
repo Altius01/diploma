@@ -1,10 +1,10 @@
 import numpy as np
 import pyopencl as cl
 import pyopencl.array as cla
-from cl_builder import CLBuilder
 
 from logger import Logger
 from data_service import DataService
+from opencl.cl_builder import CLBuilder
 
 class MHD_DataProcessor:
     def __init__(self, context, config, data_path=''):

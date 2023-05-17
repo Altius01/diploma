@@ -1,14 +1,23 @@
 import os
+import sys
 import pyopencl as cl
-from config import Config
-from solvers_new import MHD_Solver
-from data_process import MHD_DataProcessor
-from cl_builder import CLBuilder
+import taichi as ti
 
 from pathlib import Path
 import h5py
 import numpy as np
 import matplotlib.pyplot as plt
+
+sys.path.append(Path(__file__).parent.parent.as_posix())
+
+print(sys.path)
+
+from config import Config
+from opencl.solvers_new import MHD_Solver
+from data_process import MHD_DataProcessor
+# from cl_builder import CLBuilder
+from taichi_src.kernels.solver.ti_solver import TiSolver
+
 
 def plot_specs():
     DNS_kin, DNS_mag = [], []
@@ -93,7 +102,7 @@ DNS_128_CONFIG_PATH = PATH_CWD / 'dns_128_config.json'
 DNS_64_DATA_PATH = PATH_CWD / 'DNS_64'
 DNS_64_CONFIG_PATH = PATH_CWD / 'dns_64_config.json'
 
-DNS_32_DATA_PATH = PATH_CWD / 'DNS_32'
+DNS_32_DATA_PATH = PATH_CWD / 'DNS_ti_32'
 DNS_32_CONFIG_PATH = PATH_CWD / 'dns_32_config.json'
 
 SMAG_32_DATA_PATH = PATH_CWD / 'SMAG_32'
@@ -128,14 +137,19 @@ def main():
     # dns_32_solver = MHD_Solver(context=ctx, config=dns_32_config, 
     #                             data_path=DNS_32_DATA_PATH))
 
+    dns_32_solver = TiSolver(config=dns_32_config, 
+                                data_path=DNS_32_DATA_PATH, 
+                                arch=ti.vulkan
+                            )
+
     # dns_42_solver = MHD_Solver(context=ctx, config=dns_42_config, 
     #                         data_path=DNS_42_DATA_PATH)
 
     # smag_32_solver = MHD_Solver(context=ctx, config=smag_32_config, 
                                 # data_path=SMAG_32_DATA_PATH)
 
-    cross_32_solver = MHD_Solver(context=ctx, config=cross_32_config, 
-                                data_path=CROSS_32_DATA_PATH)
+    # cross_32_solver = MHD_Solver(context=ctx, config=cross_32_config, 
+    #                             data_path=CROSS_32_DATA_PATH)
     
     dns_256_postprocess = MHD_DataProcessor(context=ctx, config=dns_256_config, 
                                             data_path=DNS_256_DATA_PATH)
@@ -161,8 +175,8 @@ def main():
     # cross_32_solver.solve()
     # cross_32_postprocess.compute_energy_only()
 
-    # dns_32_solver.solve()
-    # dns_32_postprocess.compute_energy_only()
+    dns_32_solver.solve()
+    dns_32_postprocess.compute_energy_only()
 
     # dns_42_solver.solve()
     # dns_42_postprocess.compute_energy_only()
@@ -176,39 +190,14 @@ def main():
     # dns_256_solver.solve()
     # dns_256_postprocess.compute_energy_only()
 
-    postprocesses = [
-        dns_32_postprocess, dns_64_postprocess, 
-        dns_128_postprocess, dns_256_postprocess, 
-        smag_32_postprocess, cross_32_postprocess,
-        dns_42_postprocess,
-    ]
+    # postprocesses = [
+    #     dns_32_postprocess, dns_64_postprocess, 
+    #     dns_128_postprocess, dns_256_postprocess, 
+    #     smag_32_postprocess, cross_32_postprocess,
+    #     dns_42_postprocess,
+    # ]
 
-    plot_energies(postprocesses)
-
-def taichi_playground():
-    import taichi as ti
-
-    ti.init(arch=ti.cpu)
-
-    a = ti.field(dtype=ti.f32, shape=[3, 3, 3])
-    a.fill(1)
-    b = ti.field(dtype=ti.f32, shape=[3, 3, 3])
-    b.fill(2)
-
-    c = ti.field(dtype=ti.f32, shape=())
-
-    @ti.func
-    def foo(i):
-        return a[i] + b[i]
-
-    @ti.kernel
-    def knl(f: ti.template()):
-        for i in ti.grouped(ti.ndrange(3, 3, 3)):
-            c[None] += f(i)
-
-    knl(foo)
-
-    print(c.to_numpy())
+    # plot_energies(postprocesses)
 
 def plot_energies(posprocesses: list[MHD_DataProcessor]):
     kin_e = []
@@ -249,19 +238,19 @@ def plot_energies(posprocesses: list[MHD_DataProcessor]):
     plt.show()
     plt.cla()
     
-    import core_math.fft.pyfft as pyfft
+    # import core_math.fft.pyfft as pyfft
 
-    plt.figure(figsize=(16, 10), dpi= 80, facecolor='w', edgecolor='k')
-    for i in range(len(kin_e)):
-        plt.scatter(time[i], pyfft.fftn(arr=e_k[i]), label=labels[i])
+    # plt.figure(figsize=(16, 10), dpi= 80, facecolor='w', edgecolor='k')
+    # for i in range(len(kin_e)):
+    #     plt.scatter(time[i], pyfft.fftn(arr=e_k[i]), label=labels[i])
     
-    plt.gca().set(xlabel='k', ylabel='Спект кинетической энергии')
+    # plt.gca().set(xlabel='k', ylabel='Спект кинетической энергии')
 
-    plt.xticks(fontsize=12); plt.yticks(fontsize=12)
-    plt.title("Спектр кинетической энергии", fontsize=22)
-    plt.legend(fontsize=12)
-    plt.show()
-    plt.cla()
+    # plt.xticks(fontsize=12); plt.yticks(fontsize=12)
+    # plt.title("Спектр кинетической энергии", fontsize=22)
+    # plt.legend(fontsize=12)
+    # plt.show()
+    # plt.cla()
 
 
 if __name__ == "__main__":
@@ -269,5 +258,4 @@ if __name__ == "__main__":
     os.environ['PYOPENCL_NO_CACHE'] = '1'
     os.environ['PYOPENCL_COMPILER_OUTPUT'] = '1'
     
-    # main()
-    taichi_playground()
+    main()

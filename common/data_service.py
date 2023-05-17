@@ -25,10 +25,10 @@ class DataService:
     def save_data(self, step, args):
         with h5py.File(Path(f"{self.dir_name}/data/step_{step}.hdf5"), "w") as f:
             dset = f.create_dataset("t", data=np.array([args[0]]), dtype=np.float64)
-            dset = f.create_dataset("rho", data=args[1].get(), dtype=np.float64)
-            dset = f.create_dataset("p", data=args[2].get(), dtype=np.float64)
-            dset = f.create_dataset("u", data=args[3].get(), dtype=np.float64)
-            dset = f.create_dataset("B", data=args[4].get(), dtype=np.float64)
+            dset = f.create_dataset("rho", data=args[1], dtype=np.float64)
+            dset = f.create_dataset("p", data=args[2], dtype=np.float64)
+            dset = f.create_dataset("u", data=args[3], dtype=np.float64)
+            dset = f.create_dataset("B", data=args[4], dtype=np.float64)
 
     def read_data(self, step): # args):
         with h5py.File(Path(f"{self.dir_name}/data/step_{step}.hdf5"), "r") as f:

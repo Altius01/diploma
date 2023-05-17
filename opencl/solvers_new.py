@@ -9,7 +9,7 @@ import pyopencl.array as cla
 
 from config import Config
 from logger import Logger
-from cl_builder import CLBuilder
+from opencl.cl_builder import CLBuilder
 from data_service import DataService
 
 from taichi_src.kernels.sgs_constants.sgs_constants_kernels import *
@@ -245,7 +245,6 @@ class MHD_Solver:
         evt = self.knl_get_phi(self.queue, self.config.true_shape, None,
                                     self.u_gpu.data, self.B_gpu.data, self.phi_gpu.data)
         evt.wait()
-
 
     def get_alpha(self):
         evt = self.knl_get_alpha(self.queue, self.config.true_shape, None,
