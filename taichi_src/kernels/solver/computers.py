@@ -136,10 +136,18 @@ class uCompute(Compute):
     @ti.func
     def BB(self, idx):
         return self.B[idx].outer_product(self.B[idx]) * ( 1.0 / self.Ma**2)
+    
+    @ti.func
+    def rot_BB(self, idx):
+        return rot_vec3(self.get_B, self.h, idx).cross(self.B[idx]) * ( 1.0 / self.Ma**2)
 
     @ti.func
     def get_u(self, idx):
         return self.u[idx]
+    
+    @ti.func
+    def get_B(self, idx):
+        return self.B[idx]
 
     @ti.func
     def diSij(self, idx):
@@ -161,8 +169,8 @@ class uCompute(Compute):
         return (
             self.rho_uu(idx) 
             + self.p_delta(idx)
-            - self.BB(idx)
-            + self.BB_delta(idx)
+            # - self.BB(idx)
+            # + self.BB_delta(idx)
         )
 
     @ti.func
@@ -186,6 +194,7 @@ class uCompute(Compute):
                 out[idx] = (
                     self.diff(idx)
                     - self.flux(idx)
+                    + self.rot_BB(idx)
                 )
 
     @ti.kernel    

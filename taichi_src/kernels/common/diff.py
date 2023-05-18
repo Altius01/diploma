@@ -1,3 +1,4 @@
+import numpy as np
 import taichi as ti
 
 # type hints
@@ -17,6 +18,18 @@ mat5x3i = ti.types.matrix(5, 3, int)
 # type hints
 
 kron = mat3x3([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+
+levi_chevita = np.array([
+    [[0, 0, 0],
+     [0, 0, 1],
+     [0, -1, 0]],
+    [[0, 0, -1],
+     [0, 0, 0],
+     [1, 0, 0]],
+    [[0, 1, 0],
+     [-1, 0, 0],
+     [0, 0, 0]],
+], dtype=np.float64)
 
 @ti.func
 def hadamar_dot(a: mat3x3, b: mat3x3):
@@ -131,6 +144,14 @@ def div_vec3(foo: ti.template(), h, idx):
 
     for i in range(3):
         result += dx(foo, vec1i(i), i, get_elem(h, i), idx)
+    return result
+
+@ti.func
+def rot_vec3(foo: ti.template(), h, idx):
+    result = vec3(0.0)
+
+    for i, j, k in ti.static(ti.ndrange(3, 3, 3)):
+        result[i] += levi_chevita[i][j][k] * dx(foo, vec1i(k), j, get_elem(h, j), idx)
     return result
 
 @ti.func
