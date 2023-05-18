@@ -1,21 +1,16 @@
 import taichi as ti
 
-# @ti.func
-# def tensor_dot_vec3(a: ti.template(), b:ti.template()) -> mat3x3:
-#     result = mat3x3(0)
-
-#     for i, j in ti.ndrange(3, 3):
-#         result[i, j] = a[i]*b[j]
-
-#     return result
-
 # type hints
 double = ti.types.f64
 
 vec3 = ti.types.vector(n=3, dtype=double)
+vec4 = ti.types.vector(n=4, dtype=double)
 vec5 = ti.types.vector(n=5, dtype=double)
 mat3x3 = ti.types.matrix(n=3, m=3, dtype=double)
 
+vec0i = ti.types.vector(n=0, dtype=int)
+vec1i = ti.types.vector(n=1, dtype=int)
+vec2i = ti.types.vector(n=2, dtype=int)
 vec3i = ti.types.vector(n=3, dtype=int)
 mat5x2i = ti.types.matrix(5, 2, int)
 mat5x3i = ti.types.matrix(5, 3, int)
@@ -24,8 +19,23 @@ mat5x3i = ti.types.matrix(5, 3, int)
 kron = mat3x3([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
 
 @ti.func
-def tensor_dot_vec3(a: ti.template(), b:ti.template()) -> mat3x3:
-    return a.outer_product(b)
+def hadamar_dot(a: mat3x3, b: mat3x3):
+    result = mat3x3(0)
+
+    for i, j in ti.ndrange(3, 3):
+        result[i, j] = a[i, j] * b[i, j]
+    return result
+
+@ti.func
+def get_elem(arr: ti.template(), idx: int):
+    result = arr[0]
+    if idx == 1:
+        result = arr[1]
+    elif idx == 2:
+        result = arr[2]
+
+    return result
+        
 
 @ti.func
 def get_diff_stencil(axe_1, axe_2, idx, order):
@@ -40,7 +50,7 @@ def get_diff_stencil(axe_1, axe_2, idx, order):
         else:
             stencil = mat5x2i([(-1, -1), (-1, 1), (0, 0), (1, -1), (1, 1)])
 
-    for i in ti.static(range(len(result))):
+    for i in range(5):
         _idx = idx
         if axe_1 == 0:
             _idx[0] += stencil[i, 0]
@@ -56,7 +66,7 @@ def get_diff_stencil(axe_1, axe_2, idx, order):
         elif axe_2 == 2:
             _idx[2] += stencil[i, 1]
 
-        for j in ti.static(range(3)):
+        for j in range(3):
             result[i, j] = _idx[j]
     
     return result
@@ -78,18 +88,19 @@ def get_diff_coefs(axe_1, axe_2, order):
 @ti.func
 def get_weighted_sum(foo: ti.template(), axes: ti.template(), stencil: ti.template(), coefs: ti.template()):
     result = double(0.0)
-    for i in ti.static(range(len(stencil))):
+    for i in range(ti.static(len(stencil))):
         idx = vec3i(0)
-        for j in ti.static(range(3)):
+        for j in range(3):
             idx[j] = stencil[i, j]
 
-        if ti.static(len(axes) == 1):
+        if ti.static(axes.n == 1):
             result += foo(idx)[axes[0]] * coefs[i]
-        elif ti.static(len(axes) == 2):
+        elif ti.static(axes.n == 2):
             mat_ = foo(idx)
             result += mat_[axes[0], axes[1]] * coefs[i]
         else:
             result += foo(idx) * coefs[i]
+
     return result
 
 @ti.func
@@ -110,25 +121,27 @@ def ddx(foo: ti.template(), axes, diff_axe_1: ti.i32, diff_axe_2: ti.i32, h1: do
 def grad(foo: ti.template(), h, idx):
     result = vec3(0)
 
-    for i in ti.static(range(3)):
-        result[i] = dx(foo, [], i, h[i], idx)
+    for i in range(3):
+        result[i] = dx(foo, vec0i(0), i, get_elem(h, i), idx)
     return result
 
 @ti.func
 def div_vec3(foo: ti.template(), h, idx):
     result = double(0.0)
 
-    for i in ti.static(range(3)):
-        result += dx(foo, [i, ], i, h[i], idx)
+    for i in range(3):
+        result += dx(foo, vec1i(i), i, get_elem(h, i), idx)
     return result
 
 @ti.func
 def div_mat3x3(foo: ti.template(), axe, h, idx):
     result = vec3(0)
-
+    axes = vec2i(0)
     for i, j in ti.ndrange(3, 3):
         if axe == 0:
-            result[i] += dx(foo, [j, i], j, h[j], idx)
+            axes = vec2i([j, i])
         elif axe == 1:
-            result[i] += dx(foo, [i, j], j, h[j], idx)
+            axes = vec2i([i, j])
+
+        result[i] += dx(foo, axes, j, get_elem(h, j), idx)
     return result

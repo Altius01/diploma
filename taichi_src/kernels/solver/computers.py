@@ -30,13 +30,13 @@ class Compute:
     def check_ghost_idx(self, idx):
         result = False
 
-        for i in ti.static(range(len(idx))):
+        for i in ti.static(range(idx.n)):
             result = result or self._check_ghost(self.shape[i], idx[i])
 
         return result
 
-    def compute_call(self, out, dt):
-        self.compute(out, dt)
+    def compute_call(self, out):
+        self.compute(out)
 
     def ghosts_call(self, out):
         self.ghosts(out)
@@ -50,22 +50,22 @@ class RhoCompute(Compute):
     def __init__(self, h):
         self.h = vec3(h)
 
-    def init_data(self, ghost_cell_num, rho, u):
+    def init_data(self, ghosts, rho, u):
         self.u = u
 
         self.rho = rho
         self.shape = self.rho.shape
-        self.ghost = ghost_cell_num
+        self.ghost = ghosts
         
     @ti.func
     def rho_u(self, idx):
         return self.rho[idx] * self.u[idx]
 
     @ti.kernel
-    def compute(self, out: ti.template(), dt: ti.f64):
+    def compute(self, out: ti.template()):
         for idx in ti.grouped(self.rho):
             if not self.check_ghost_idx(idx):
-                out[idx] = self.rho[idx] - dt*div_vec3(self.rho_u, self.h, idx)
+                out[idx] = div_vec3(self.rho_u, self.h, idx)
 
     @ti.kernel    
     def ghosts(self, out: ti.template()):
@@ -91,10 +91,10 @@ class pCompute(Compute):
         self.ghost = ghost_cell_num
         
     @ti.kernel
-    def compute(self, out: ti.template(), dt: double):
+    def compute(self, out: ti.template()):
         for idx in ti.grouped(self.rho):
-            if not self.check_ghost_idx(idx):
-                    out[idx] = ti.math.pow(ti.cast(self.rho[idx], ti.f32), ti.cast(self.gamma, ti.f32))
+            # if not self.check_ghost_idx(idx):
+            out[idx] = ti.math.pow(ti.cast(self.rho[idx], ti.f32), ti.cast(self.gamma, ti.f32))
                 
     @ti.kernel    
     def ghosts(self, out: ti.template()):
@@ -123,7 +123,7 @@ class uCompute(Compute):
         
     @ti.func
     def rho_uu(self, idx):
-        return self.rho[idx] * tensor_dot_vec3(self.u[idx], self.u[idx])
+        return self.rho[idx] * self.u[idx].outer_product(self.u[idx])
 
     @ti.func
     def p_delta(self, idx):
@@ -131,11 +131,11 @@ class uCompute(Compute):
 
     @ti.func
     def BB_delta(self, idx):
-        return (self.B[idx].norm()**2 / (2*self.Ma**2) ) * kron
+        return (self.B[idx].norm_sqr() / (2.0*self.Ma**2) ) * kron
 
     @ti.func
     def BB(self, idx):
-        return tensor_dot_vec3(self.B[idx], self.B[idx]) / self.Ma**2
+        return self.B[idx].outer_product(self.B[idx]) * ( 1.0 / self.Ma**2)
 
     @ti.func
     def get_u(self, idx):
@@ -145,28 +145,29 @@ class uCompute(Compute):
     def diSij(self, idx):
         result = mat3x3(0)
 
-        for i, j in ti.static(ti.ndrange(3, 3)):
+        for i, j in ti.ndrange(3, 3):
             result[i, j] = 0.5 * (
-                ddx(self.get_u, [j,], i, i, self.h[i], self.h[j], idx) 
-                + ddx(self.get_u, [i,], i, j, self.h[i], self.h[j], idx)
+                ddx(self.get_u, vec1i([j]), i, i, get_elem(self.h, i), get_elem(self.h, j), idx) 
+                + ddx(self.get_u, vec1i([i]), i, j, get_elem(self.h, i), get_elem(self.h, j), idx)
                 )
         return result
 
     @ti.func
     def sigma(self, idx):
+        return hadamar_dot(self.diSij(idx), (mat3x3(2) - (2.0/3.0)*kron)) / self.Re
+    
+    @ti.func
+    def flux_foo(self, idx):
         return (
-            2 * self.diSij(idx) 
-            - (2.0/3.0) * self.diSij(idx) * kron
-            ) / self.Re
+            self.rho_uu(idx) 
+            + self.p_delta(idx)
+            - self.BB(idx)
+            + self.BB_delta(idx)
+        )
 
     @ti.func
     def flux(self, idx):
-        return (
-            div_mat3x3(self.rho_uu, 1, self.h, idx)
-            + div_mat3x3(self.p_delta, 1, self.h, idx)
-            + div_mat3x3(self.BB_delta, 1, self.h, idx)
-            + div_mat3x3(self.BB, 1, self.h, idx)
-        )
+        return div_mat3x3(self.flux_foo, 1, self.h, idx)
 
     @ti.func
     def diff(self, idx):
@@ -179,24 +180,19 @@ class uCompute(Compute):
         return result
 
     @ti.kernel
-    def compute(self, out: ti.template(), rho_new: ti.template(), dt: ti.f64):
+    def compute(self, out: ti.template()):
         for idx in ti.grouped(self.u):
             if not self.check_ghost_idx(idx):
-                out[idx] = (self.rho[idx]*self.u[idx] 
-                    - dt*self.flux(idx) 
-                    + dt*self.diff(idx)
-                ) / rho_new[idx]
-            
-            
+                out[idx] = (
+                    self.diff(idx)
+                    - self.flux(idx)
+                )
 
     @ti.kernel    
     def ghosts(self, out: ti.template()):
         for idx in ti.grouped(self.u):
             if self.check_ghost_idx(idx):
                 out[idx] = out[get_ghost_new_idx(self.ghost, self.shape, idx)]
-
-    def compute_call(self, out, rho_new, dt):
-        self.compute(out, rho_new, dt)
 
 # RHOU
 
@@ -216,11 +212,14 @@ class BCompute(Compute):
 
     @ti.func
     def uB(self, idx):
-        return tensor_dot_vec3(self.u[idx], self.B[idx])
+        return (
+            self.B[idx].outer_product(self.u[idx]) 
+            - self.u[idx].outer_product(self.B[idx])
+        )
 
     @ti.func
     def flux(self, idx):
-        return div_mat3x3(self.uB, 0, self.h, idx) - div_mat3x3(self.uB, 1, self.h, idx)
+        return div_mat3x3(self.uB, 1, self.h, idx)
 
     @ti.func
     def get_B(self, idx):
@@ -230,18 +229,17 @@ class BCompute(Compute):
     def diff(self, idx):
         result = vec3(0)
 
-        for i, j in ti.static(ti.ndrange(3, 3)):
-            result[i] += ddx(self.get_B, [i, ], j, j, self.h[j], self.h[j], idx)
+        for i, j in ti.ndrange(3, 3):
+            result[i] += ddx(self.get_B, vec1i([i]), j, j, get_elem(self.h, j), get_elem(self.h, j), idx)
         return result / self.Rem
 
     @ti.kernel
-    def compute(self, out: ti.template(), dt: ti.f64):
+    def compute(self, out: ti.template()):
         for idx in ti.grouped(self.B):
             if not self.check_ghost_idx(idx):
                 out[idx] = (
-                    self.B[idx] 
-                    - dt*self.flux(idx)
-                    + dt*self.diff(idx)
+                    self.diff(idx)
+                    - self.flux(idx)
                 )
 
     @ti.kernel    

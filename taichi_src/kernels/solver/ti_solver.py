@@ -19,10 +19,12 @@ class TiSolver:
         self.B0 = 1e-1
         self.eps_p = 1e-5
         self.h = [0, 0, 0]
-        self.Re = 1e2
+        self.Re = 1e3
         self.Rem = 1e2
         self.Ma = 1.5
         self.gamma = 7.0/5.0
+
+        self.rk_steps = 3
 
         self.config = config
         self.ghost = self.config.ghosts
@@ -34,11 +36,11 @@ class TiSolver:
 
         ti.init(arch=arch, debug=True)
 
-        self.u = [ti.Vector.field(n=3, dtype=ti.f64, shape=self.config.shape) for i in range(2)]
-        self.B = [ti.Vector.field(n=3, dtype=ti.f64, shape=self.config.shape) for i in range(2)]
-        self.p = [ti.field(dtype=ti.f64, shape=self.config.shape) for i in range(2)]
-        self.rho = [ti.field(dtype=ti.f64, shape=self.config.shape) for i in range(2)]
-
+        self.u = [ti.Vector.field(n=3, dtype=ti.f64, shape=self.config.shape) for i in range(self.rk_steps)]
+        self.B = [ti.Vector.field(n=3, dtype=ti.f64, shape=self.config.shape) for i in range(self.rk_steps)]
+        self.p = [ti.field(dtype=ti.f64, shape=self.config.shape) for i in range(self.rk_steps)]
+        self.rho = [ti.field(dtype=ti.f64, shape=self.config.shape) for i in range(self.rk_steps)]
+        
         self.rho_comp = RhoCompute(self.h)
         self.p_comp = pCompute(self.gamma, self.h)
         self.u_comp = uCompute(self.Re, self.Ma, self.h)
@@ -76,7 +78,7 @@ class TiSolver:
         Logger.log('Start solving.')
 
         while self.current_time < self.config.end_time or (self.current_step % self.config.rw_del != 0):
-            dT = 0.1 * ( min(self.config.domain_size) / max(self.config.true_shape))**2
+            dT = 1e-1 * ( min(self.config.domain_size) / max(self.config.true_shape))**2
 
             self.current_time += dT
             self.current_step += 1
@@ -194,28 +196,46 @@ class TiSolver:
                     self.u[0].shape, idx_1)]
                 self.B[0][idx_1] = self.B[0][get_ghost_new_idx(self.config.ghosts, 
                     self.B[0].shape, idx_1)]
-            
+
+    @ti.kernel
+    def sum_fields(self, a: ti.template(), b:ti.template(), c:ti.template(), c1:double, c2:double, c3:double):
+        for idx in ti.grouped(a):
+              c[idx] = c1*a[idx] + c2*b[idx] + c3*c[idx]
+
+    @ti.kernel
+    def sum_fields_u(self, a: ti.template(), b:ti.template(), c:ti.template(), rho:ti.template(), c1:double, c2:double, c3:double):
+        for idx in ti.grouped(a):
+            c[idx] = c1*a[idx] + c2*( b[idx] / (rho[idx]) ) + c3*c[idx]
 
     def _step(self, dT):
-        coefs = ((0.0, 1.0), (0.75, 0.25), ((1.0/3.0), (2.0/3.0)),)
 
-        self.rho_comp.init_data(self.config.ghosts, self.rho[0], self.u[0])
-        self.rho_comp.compute_call(self.rho[1], dT)
-        self.rho_comp.ghosts_call(self.rho[1])
+        coefs = [(1, 0.5 * dT, 0), (1, 0.5 * dT, 0), (2.0/3, (2.0/3) * dT, 1.0/3)]
 
-        self.p_comp.init_data(self.config.ghosts, self.rho[1])
-        self.p_comp.compute_call(self.p[1], dT)
-        self.p_comp.ghosts_call(self.p[1])
+        for i, c in enumerate(coefs):
+            
+            i_next = (i + 1) % self.rk_steps
 
-        self.B_comp.init_data(self.config.ghosts, self.u[0], self.B[0])
-        self.B_comp.compute_call(self.B[1], dT)
-        self.B_comp.ghosts_call(self.B[1])
+            i_k = i_next
+            if i_k == 0:
+                i_k += 1
 
-        self.u_comp.init_data(self.config.ghosts, self.rho[0], self.p[0], self.u[0], self.B[0])
-        self.u_comp.compute_call(self.u[1], self.rho[1], dT)
-        self.u_comp.ghosts_call(self.u[1])
+            self.rho_comp.init_data(self.config.ghosts, self.rho[i], self.u[i])
+            self.rho_comp.compute_call(self.rho[i_k])
+            self.rho_comp.ghosts_call(self.rho[i_k])
 
-        self.rho[0].copy_from(self.rho[1])
-        self.p[0].copy_from(self.p[1])
-        self.u[0].copy_from(self.u[1])
-        self.B[0].copy_from(self.B[1])
+            self.B_comp.init_data(self.config.ghosts, self.u[i], self.B[i])
+            self.B_comp.compute_call(self.B[i_k])
+            self.B_comp.ghosts_call(self.B[i_k])
+
+            self.u_comp.init_data(self.config.ghosts, self.rho[i], self.p[i], self.u[i], self.B[i])
+            self.u_comp.compute_call(self.u[i_k])
+            self.u_comp.ghosts_call(self.u[i_k])
+
+            self.sum_fields(self.rho[i], self.rho[i_k], self.rho[i_next], c[0], c[1], c[2])
+            self.sum_fields_u(self.u[i], self.u[i_k], self.u[i_next], self.rho[i_next], c[0], c[1], c[2])
+            self.sum_fields(self.B[i], self.B[i_k], self.B[i_next], c[0], c[1], c[2])
+
+            self.p_comp.init_data(self.config.ghosts, self.rho[i_next])
+            self.p_comp.compute_call(self.p[i_next])
+            self.p_comp.ghosts_call(self.p[i_next])
+    

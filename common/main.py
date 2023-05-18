@@ -16,6 +16,7 @@ from config import Config
 from opencl.solvers_new import MHD_Solver
 from data_process import MHD_DataProcessor
 # from cl_builder import CLBuilder
+from taichi_src.kernels.common.data_process import TiDataProcessor
 from taichi_src.kernels.solver.ti_solver import TiSolver
 
 
@@ -139,7 +140,7 @@ def main():
 
     dns_32_solver = TiSolver(config=dns_32_config, 
                                 data_path=DNS_32_DATA_PATH, 
-                                arch=ti.vulkan
+                                arch=ti.gpu
                             )
 
     # dns_42_solver = MHD_Solver(context=ctx, config=dns_42_config, 
@@ -157,7 +158,7 @@ def main():
                                             data_path=DNS_128_DATA_PATH)
     dns_64_postprocess = MHD_DataProcessor(context=ctx, config=dns_64_config, 
                                             data_path=DNS_64_DATA_PATH)
-    dns_32_postprocess = MHD_DataProcessor(context=ctx, config=dns_32_config, 
+    dns_32_postprocess = TiDataProcessor(context=ctx, config=dns_32_config, 
                                             data_path=DNS_32_DATA_PATH)
 
     dns_42_postprocess = MHD_DataProcessor(context=ctx, config=dns_42_config, 
