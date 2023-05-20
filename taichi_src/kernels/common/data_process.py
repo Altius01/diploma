@@ -50,33 +50,33 @@ class TiDataProcessor:
 
 
     @ti.kernel
-    def _get_kin_energy(self) -> double:
-        result = double(0.)
-
+    def _get_kin_energy(self, s: ti.template()):
         for idx in ti.grouped(self.rho):
             if not self.check_ghost_idx(idx):
-                result += 0.5 * self.rho[idx] * self.u[idx].norm_sqr()
-        return result
+                s[None] += ti.cast(0.5 * self.rho[idx] * self.u[idx].norm_sqr(), ti.types.f32)
     
     @ti.kernel
-    def _get_mag_energy(self) -> double:
-        result = double(0.)
-
+    def _get_mag_energy(self, s: ti.template()):
         for idx in ti.grouped(self.B):
             if not self.check_ghost_idx(idx):
-                result += 0.5 * self.B[idx].norm_sqr()
-        return result
+                s[None] += ti.cast(0.5 * self.B[idx].norm_sqr(), ti.types.f32)
 
     def compute_kin_energy(self, i):
         if self.curr_step != i:
             self.read_file(i)
-        return self._get_kin_energy() * self.config.dV
+
+        s = ti.field(ti.f32, shape=())
+        self._get_kin_energy(s)
+        return s[None] * self.config.dV
         
 
     def compute_mag_energy(self, i):
         if self.curr_step != i:
             self.read_file(i)
-        return self._get_mag_energy() * self.config.dV
+
+        s = ti.field(ti.f32, shape=())
+        self._get_mag_energy(s)
+        return s[None] * self.config.dV
     
     def compute_energy_only(self, save_energy=True):
         Logger.log('Start computing energies:')

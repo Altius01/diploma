@@ -103,7 +103,8 @@ DNS_128_CONFIG_PATH = PATH_CWD / 'dns_128_config.json'
 DNS_64_DATA_PATH = PATH_CWD / 'DNS_64'
 DNS_64_CONFIG_PATH = PATH_CWD / 'dns_64_config.json'
 
-DNS_32_DATA_PATH = PATH_CWD / 'DNS_ti_32'
+DNS_32_TI_DATA_PATH = PATH_CWD / 'DNS_ti_32'
+DNS_32_DATA_PATH = PATH_CWD / 'DNS_32'
 DNS_32_CONFIG_PATH = PATH_CWD / 'dns_32_config.json'
 
 SMAG_32_DATA_PATH = PATH_CWD / 'SMAG_32'
@@ -135,12 +136,12 @@ def main():
     #                             data_path=DNS_128_DATA_PATH)
     # dns_64_solver = MHD_Solver(context=ctx, config=dns_64_config, 
     #                             data_path=DNS_64_DATA_PATH)
-    # dns_32_solver = MHD_Solver(context=ctx, config=dns_32_config, 
-    #                             data_path=DNS_32_DATA_PATH))
+    dns_32_solver = MHD_Solver(context=ctx, config=dns_32_config, 
+                                data_path=DNS_32_DATA_PATH)
 
-    dns_32_solver = TiSolver(config=dns_32_config, 
-                                data_path=DNS_32_DATA_PATH, 
-                                arch=ti.gpu
+    dns_32_ti_solver = TiSolver(config=dns_32_config, 
+                                data_path=DNS_32_TI_DATA_PATH, 
+                                arch=ti.vulkan
                             )
 
     # dns_42_solver = MHD_Solver(context=ctx, config=dns_42_config, 
@@ -158,8 +159,12 @@ def main():
                                             data_path=DNS_128_DATA_PATH)
     dns_64_postprocess = MHD_DataProcessor(context=ctx, config=dns_64_config, 
                                             data_path=DNS_64_DATA_PATH)
-    dns_32_postprocess = TiDataProcessor(context=ctx, config=dns_32_config, 
+
+    dns_32_postprocess = MHD_DataProcessor(context=ctx, config=dns_32_config, 
                                             data_path=DNS_32_DATA_PATH)
+
+    dns_32_ti_postprocess = TiDataProcessor(context=ctx, config=dns_32_config, 
+                                            data_path=DNS_32_TI_DATA_PATH)
 
     dns_42_postprocess = MHD_DataProcessor(context=ctx, config=dns_42_config, 
                                             data_path=DNS_42_DATA_PATH)
@@ -178,6 +183,9 @@ def main():
 
     dns_32_solver.solve()
     dns_32_postprocess.compute_energy_only()
+
+    dns_32_ti_solver.solve()
+    dns_32_ti_postprocess.compute_energy_only()
 
     # dns_42_solver.solve()
     # dns_42_postprocess.compute_energy_only()

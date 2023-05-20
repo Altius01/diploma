@@ -83,7 +83,7 @@ class MHD_Solver:
 
     def save_file(self, i):
         Logger.log(f'Writing step_{self.current_step}, t: {self.current_time} to file.')
-        self.data_service.save_data(i, (self.current_time, self.rho_gpu, self.p_gpu, self.u_gpu, self.B_gpu))
+        self.data_service.save_data(i, (self.current_time, self.rho_gpu.get(), self.p_gpu.get(), self.u_gpu.get(), self.B_gpu.get()))
         Logger.log(f'Writind step_{self.current_step}, t: {self.current_time} to file - done!')
 
     def solve(self):

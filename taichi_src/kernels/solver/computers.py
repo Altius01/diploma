@@ -169,8 +169,8 @@ class uCompute(Compute):
         return (
             self.rho_uu(idx) 
             + self.p_delta(idx)
-            # - self.BB(idx)
-            # + self.BB_delta(idx)
+            - self.BB(idx)
+            + self.BB_delta(idx)
         )
 
     @ti.func
@@ -194,7 +194,7 @@ class uCompute(Compute):
                 out[idx] = (
                     self.diff(idx)
                     - self.flux(idx)
-                    + self.rot_BB(idx)
+                    # + self.rot_BB(idx)
                 )
 
     @ti.kernel    
