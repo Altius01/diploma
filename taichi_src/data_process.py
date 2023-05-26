@@ -4,7 +4,7 @@ import taichi as ti
 from logger import Logger
 from data_service import DataService
 
-from taichi_src.kernels.solver.computers import *
+from taichi_src.common.boundaries import *
 
 @ti.data_oriented
 class TiDataProcessor:

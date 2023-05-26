@@ -13,11 +13,11 @@ sys.path.append(Path(__file__).parent.parent.as_posix())
 print(sys.path)
 
 from config import Config
-from opencl.solvers_new import MHD_Solver
-from data_process import MHD_DataProcessor
+# from opencl.solvers_new import MHD_Solver
+# from data_process import MHD_DataProcessor
 # from cl_builder import CLBuilder
-from taichi_src.kernels.common.data_process import TiDataProcessor
-from taichi_src.kernels.solver.ti_solver import TiSolver
+from taichi_src.data_process import TiDataProcessor
+from taichi_src.ti_solver import TiSolver
 
 
 def plot_specs():
@@ -107,7 +107,7 @@ DNS_32_TI_DATA_PATH = PATH_CWD / 'DNS_ti_32'
 DNS_32_DATA_PATH = PATH_CWD / 'DNS_32'
 DNS_32_CONFIG_PATH = PATH_CWD / 'dns_32_config.json'
 
-SMAG_32_DATA_PATH = PATH_CWD / 'SMAG_32'
+SMAG_32_DATA_PATH = PATH_CWD / 'SMAG_ti_32'
 SMAG_32_CONFIG_PATH = PATH_CWD / 'smag_32_config.json'
 
 CROSS_32_DATA_PATH = PATH_CWD / 'CROSS_32'
@@ -136,11 +136,11 @@ def main():
     #                             data_path=DNS_128_DATA_PATH)
     # dns_64_solver = MHD_Solver(context=ctx, config=dns_64_config, 
     #                             data_path=DNS_64_DATA_PATH)
-    dns_32_solver = MHD_Solver(context=ctx, config=dns_32_config, 
-                                data_path=DNS_32_DATA_PATH)
+    # dns_32_solver = MHD_Solver(context=ctx, config=dns_32_config, 
+    #                             data_path=DNS_32_DATA_PATH)
 
     dns_32_ti_solver = TiSolver(config=dns_32_config, 
-                                data_path=DNS_32_TI_DATA_PATH, 
+                                data_path=SMAG_32_DATA_PATH, 
                                 arch=ti.vulkan
                             )
 
@@ -153,27 +153,27 @@ def main():
     # cross_32_solver = MHD_Solver(context=ctx, config=cross_32_config, 
     #                             data_path=CROSS_32_DATA_PATH)
     
-    dns_256_postprocess = MHD_DataProcessor(context=ctx, config=dns_256_config, 
-                                            data_path=DNS_256_DATA_PATH)
-    dns_128_postprocess = MHD_DataProcessor(context=ctx, config=dns_128_config, 
-                                            data_path=DNS_128_DATA_PATH)
-    dns_64_postprocess = MHD_DataProcessor(context=ctx, config=dns_64_config, 
-                                            data_path=DNS_64_DATA_PATH)
+    # dns_256_postprocess = MHD_DataProcessor(context=ctx, config=dns_256_config, 
+    #                                         data_path=DNS_256_DATA_PATH)
+    # dns_128_postprocess = MHD_DataProcessor(context=ctx, config=dns_128_config, 
+    #                                         data_path=DNS_128_DATA_PATH)
+    # dns_64_postprocess = MHD_DataProcessor(context=ctx, config=dns_64_config, 
+    #                                         data_path=DNS_64_DATA_PATH)
 
-    dns_32_postprocess = MHD_DataProcessor(context=ctx, config=dns_32_config, 
-                                            data_path=DNS_32_DATA_PATH)
+    # dns_32_postprocess = MHD_DataProcessor(context=ctx, config=dns_32_config, 
+    #                                         data_path=DNS_32_DATA_PATH)
 
     dns_32_ti_postprocess = TiDataProcessor(context=ctx, config=dns_32_config, 
-                                            data_path=DNS_32_TI_DATA_PATH)
-
-    dns_42_postprocess = MHD_DataProcessor(context=ctx, config=dns_42_config, 
-                                            data_path=DNS_42_DATA_PATH)
-
-    smag_32_postprocess = MHD_DataProcessor(context=ctx, config=smag_32_config, 
                                             data_path=SMAG_32_DATA_PATH)
 
-    cross_32_postprocess = MHD_DataProcessor(context=ctx, config=cross_32_config, 
-                                data_path=CROSS_32_DATA_PATH)
+    # dns_42_postprocess = MHD_DataProcessor(context=ctx, config=dns_42_config, 
+    #                                         data_path=DNS_42_DATA_PATH)
+
+    # smag_32_postprocess = MHD_DataProcessor(context=ctx, config=smag_32_config, 
+    #                                         data_path=SMAG_32_DATA_PATH)
+
+    # cross_32_postprocess = MHD_DataProcessor(context=ctx, config=cross_32_config, 
+    #                             data_path=CROSS_32_DATA_PATH)
     
     # smag_32_solver.solve()
     # smag_32_postprocess.compute_energy_only()
@@ -181,8 +181,8 @@ def main():
     # cross_32_solver.solve()
     # cross_32_postprocess.compute_energy_only()
 
-    dns_32_solver.solve()
-    dns_32_postprocess.compute_energy_only()
+    # dns_32_solver.solve()
+    # dns_32_postprocess.compute_energy_only()
 
     dns_32_ti_solver.solve()
     dns_32_ti_postprocess.compute_energy_only()
@@ -208,7 +208,7 @@ def main():
 
     # plot_energies(postprocesses)
 
-def plot_energies(posprocesses: list[MHD_DataProcessor]):
+def plot_energies(posprocesses: list):
     kin_e = []
     mag_e = []
     time = []

@@ -22,6 +22,11 @@ def get_ghost_new_idx(ghost, shape, idx):
 
 @ti.data_oriented
 class Compute:
+    def __init__(self, ghosts, shape, h):
+        self.h = vec3(h)
+        self.shape = shape
+        self.ghost = ghosts
+
     @ti.func
     def _check_ghost(self, shape, idx):
         return (idx < self.ghost) or (idx >= shape - self.ghost)
@@ -47,15 +52,9 @@ class Compute:
 
 @ti.data_oriented
 class RhoCompute(Compute):
-    def __init__(self, h):
-        self.h = vec3(h)
-
-    def init_data(self, ghosts, rho, u):
+    def init_data(self, rho, u):
         self.u = u
-
         self.rho = rho
-        self.shape = self.rho.shape
-        self.ghost = ghosts
         
     @ti.func
     def rho_u(self, idx):
@@ -69,7 +68,7 @@ class RhoCompute(Compute):
 
     @ti.kernel    
     def ghosts(self, out: ti.template()):
-        for idx in ti.grouped(self.rho):
+        for idx in ti.grouped(out):
             if self.check_ghost_idx(idx):
                 out[idx] = out[get_ghost_new_idx(self.ghost, self.shape, idx)]
 
@@ -81,14 +80,12 @@ class RhoCompute(Compute):
 
 @ti.data_oriented
 class pCompute(Compute):
-    def __init__(self, gamma, h):
+    def __init__(self, gamma, ghosts, shape, h):
         self.gamma = gamma
-        self.h = vec3(h)
+        super().__init__(ghosts, shape, h)
     
-    def init_data(self, ghost_cell_num, rho):
+    def init_data(self, rho):
         self.rho = rho
-        self.shape = rho.shape
-        self.ghost = ghost_cell_num
         
     @ti.kernel
     def compute(self, out: ti.template()):
@@ -98,7 +95,7 @@ class pCompute(Compute):
                 
     @ti.kernel    
     def ghosts(self, out: ti.template()):
-        for idx in ti.grouped(self.rho):
+        for idx in ti.grouped(out):
             if self.check_ghost_idx(idx):
                 out[idx] = out[get_ghost_new_idx(self.ghost, self.shape, idx)]
 
@@ -107,19 +104,16 @@ class pCompute(Compute):
 # RHOU
 @ti.data_oriented
 class uCompute(Compute):
-    def __init__(self, Re, Ma, h):
+    def __init__(self, Re, Ma, ghosts, shape, h):
         self.Re = Re
         self.Ma = Ma
-        self.h = vec3(h)
+        super().__init__(ghosts, shape, h)
 
-    def init_data(self, ghost, rho, p, u, B):
+    def init_data(self, rho, p, u, B):
         self.u = u
         self.p = p
         self.B = B
         self.rho = rho
-
-        self.ghost = ghost
-        self.shape = u.shape
         
     @ti.func
     def rho_uu(self, idx):
@@ -128,6 +122,14 @@ class uCompute(Compute):
     @ti.func
     def p_delta(self, idx):
         return self.p[idx] * kron
+
+    @ti.func
+    def get_p(self, idx):
+        return self.p[idx]
+
+    @ti.func
+    def rho_delta(self, idx):
+        return self.rho[idx] * kron
 
     @ti.func
     def BB_delta(self, idx):
@@ -167,7 +169,7 @@ class uCompute(Compute):
     @ti.func
     def flux_foo(self, idx):
         return (
-            self.rho_uu(idx) 
+            + self.rho_uu(idx) 
             + self.p_delta(idx)
             - self.BB(idx)
             + self.BB_delta(idx)
@@ -194,12 +196,11 @@ class uCompute(Compute):
                 out[idx] = (
                     self.diff(idx)
                     - self.flux(idx)
-                    # + self.rot_BB(idx)
                 )
 
     @ti.kernel    
     def ghosts(self, out: ti.template()):
-        for idx in ti.grouped(self.u):
+        for idx in ti.grouped(out):
             if self.check_ghost_idx(idx):
                 out[idx] = out[get_ghost_new_idx(self.ghost, self.shape, idx)]
 
@@ -208,16 +209,13 @@ class uCompute(Compute):
 # B
 @ti.data_oriented
 class BCompute(Compute):
-    def __init__(self, Rem, h):
+    def __init__(self, Rem, ghosts, shape, h):
         self.Rem = Rem
-        self.h = vec3(h)
+        super().__init__(ghosts, shape, h)
 
-    def init_data(self, ghost, u, B):
+    def init_data(self, u, B):
         self.u = u
         self.B = B
-
-        self.ghost = ghost
-        self.shape = B.shape
 
     @ti.func
     def uB(self, idx):
@@ -253,7 +251,7 @@ class BCompute(Compute):
 
     @ti.kernel    
     def ghosts(self, out: ti.template()):
-        for idx in ti.grouped(self.B):
+        for idx in ti.grouped(out):
             if self.check_ghost_idx(idx):
                 out[idx] = out[get_ghost_new_idx(self.ghost, self.shape, idx)]
 
