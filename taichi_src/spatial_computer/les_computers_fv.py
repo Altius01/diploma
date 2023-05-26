@@ -29,22 +29,32 @@ class LesComputer(SystemComputer):
 
     def get_filtered_shape(self, filter_size: vec3i):
         new_shape = [0, 0, 0]
-        new_h = self.h * filter_size
+        for i in range(len(filter_size)):
+            new_shape[i] = int(self.shape[i] // filter_size[i])
+        
+        new_h = vec3(0)
+
         for i in range(len(new_h)):
-            new_shape[i] = int(self.domain_size[i] // new_h[i])
-            new_h[i] = self.domain_size[i] / new_shape[i]
+            new_h[i] = self.shape[i] * self.h[i] / new_shape[i]
 
         return tuple(new_shape), new_h
 
     @ti.func
-    def foo_filter_1d(self, h, new_h, i, idx):
+    def foo_filter_1d(self, h, new_h, i, shape, idx):
         idx_i = get_elem(idx, i)
-
+        shape_i = get_elem(shape, i)
         h_i = get_elem(h, i)
         new_h_i = get_elem(new_h, i)
 
-        left_i_new = ti.cast(ti.floor(idx_i * h_i / new_h_i), int)
-        right_i_new = ti.cast(ti.floor((idx_i+1) * h_i / new_h_i), int)
+        idx_i_left = idx_i
+        idx_i_right = 0
+        if (idx_i + 1) < shape_i:
+            idx_i_right = idx_i + 1
+        else:
+            idx_i_right = idx_i
+
+        left_i_new = ti.floor(idx_i_left * h_i / new_h_i)
+        right_i_new = ti.floor(idx_i_right * h_i / new_h_i)
 
         left_delta = h_i
         right_delta = double(0.0)
@@ -60,23 +70,23 @@ class LesComputer(SystemComputer):
             self.filter_old_shape[1], self.filter_old_shape[2]):
             idx = [i, j, k]
 
-            x_vec = self.foo_filter_1d(h, new_h, 0, idx)
-            y_vec = self.foo_filter_1d(h, new_h, 1, idx)
-            z_vec = self.foo_filter_1d(h, new_h, 2, idx)
+            x_vec = self.foo_filter_1d(h, new_h, 0, self.filter_old_shape, idx)
+            y_vec = self.foo_filter_1d(h, new_h, 1, self.filter_old_shape, idx)
+            z_vec = self.foo_filter_1d(h, new_h, 2, self.filter_old_shape, idx)
 
             for i, j ,k in ti.static(ti.ndrange(2, 2, 2)):
                 idx_new = [0, 0, 0]
                 dV = double(1.0)
                 idx_new[0] = ti.cast(x_vec[i], int)
                 dV *= x_vec[i+2]
-                idx_new[1] =ti.cast(y_vec[i], int)
-                dV *= y_vec[i+2]
-                idx_new[2] = ti.cast(z_vec[i], int)
-                dV *= z_vec[i+2]
-
+                idx_new[1] =ti.cast(y_vec[j], int)
+                dV *= y_vec[j+2]
+                idx_new[2] = ti.cast(z_vec[k], int)
+                dV *= z_vec[k+2]
+                
                 out[idx_new] = foo(idx) * dV
 
-    def foo_filter(self, foo, out, shape, h, new_h):
+    def foo_filter(self, foo, out, shape, new_h, h):
         self.filter_old_shape = shape
         self.knl_foo_filter(foo, out, h, new_h)
 

@@ -13,9 +13,6 @@ sys.path.append(Path(__file__).parent.parent.as_posix())
 print(sys.path)
 
 from config import Config
-# from opencl.solvers_new import MHD_Solver
-# from data_process import MHD_DataProcessor
-# from cl_builder import CLBuilder
 from taichi_src.data_process import TiDataProcessor
 from taichi_src.ti_solver import TiSolver
 
@@ -117,87 +114,17 @@ DNS_42_DATA_PATH = PATH_CWD / 'DNS_42'
 DNS_42_CONFIG_PATH = PATH_CWD / 'dns_42_config.json'
 
 def main():
-    ctx = cl.create_some_context()
-
-    cross_32_config = Config(file_path=CROSS_32_CONFIG_PATH)
-
-    smag_32_config = Config(file_path=SMAG_32_CONFIG_PATH)
-
-    dns_32_config = Config(file_path=DNS_32_CONFIG_PATH)
-    dns_64_config = Config(file_path=DNS_64_CONFIG_PATH)
-    dns_128_config = Config(file_path=DNS_128_CONFIG_PATH)
     dns_256_config = Config(file_path=DNS_256_CONFIG_PATH)
 
-    dns_42_config = Config(file_path=DNS_42_CONFIG_PATH)
-
-    # dns_256_solver = MHD_Solver(context=ctx, config=dns_256_config, 
-    #                             data_path=DNS_256_DATA_PATH)
-    # dns_128_solver = MHD_Solver(context=ctx, config=dns_128_config, 
-    #                             data_path=DNS_128_DATA_PATH)
-    # dns_64_solver = MHD_Solver(context=ctx, config=dns_64_config, 
-    #                             data_path=DNS_64_DATA_PATH)
-    # dns_32_solver = MHD_Solver(context=ctx, config=dns_32_config, 
-    #                             data_path=DNS_32_DATA_PATH)
-
-    dns_32_ti_solver = TiSolver(config=dns_32_config, 
-                                data_path=SMAG_32_DATA_PATH, 
-                                arch=ti.vulkan
-                            )
-
-    # dns_42_solver = MHD_Solver(context=ctx, config=dns_42_config, 
-    #                         data_path=DNS_42_DATA_PATH)
-
-    # smag_32_solver = MHD_Solver(context=ctx, config=smag_32_config, 
-                                # data_path=SMAG_32_DATA_PATH)
-
-    # cross_32_solver = MHD_Solver(context=ctx, config=cross_32_config, 
-    #                             data_path=CROSS_32_DATA_PATH)
+    dns_256_solver = TiSolver(config=dns_256_config, 
+                                data_path=DNS_256_DATA_PATH, 
+                                arch=ti.gpu)
     
-    # dns_256_postprocess = MHD_DataProcessor(context=ctx, config=dns_256_config, 
-    #                                         data_path=DNS_256_DATA_PATH)
-    # dns_128_postprocess = MHD_DataProcessor(context=ctx, config=dns_128_config, 
-    #                                         data_path=DNS_128_DATA_PATH)
-    # dns_64_postprocess = MHD_DataProcessor(context=ctx, config=dns_64_config, 
-    #                                         data_path=DNS_64_DATA_PATH)
+    dns_256_postprocess = TiDataProcessor(config=dns_256_config, 
+                                            data_path=DNS_256_DATA_PATH)
 
-    # dns_32_postprocess = MHD_DataProcessor(context=ctx, config=dns_32_config, 
-    #                                         data_path=DNS_32_DATA_PATH)
-
-    dns_32_ti_postprocess = TiDataProcessor(context=ctx, config=dns_32_config, 
-                                            data_path=SMAG_32_DATA_PATH)
-
-    # dns_42_postprocess = MHD_DataProcessor(context=ctx, config=dns_42_config, 
-    #                                         data_path=DNS_42_DATA_PATH)
-
-    # smag_32_postprocess = MHD_DataProcessor(context=ctx, config=smag_32_config, 
-    #                                         data_path=SMAG_32_DATA_PATH)
-
-    # cross_32_postprocess = MHD_DataProcessor(context=ctx, config=cross_32_config, 
-    #                             data_path=CROSS_32_DATA_PATH)
-    
-    # smag_32_solver.solve()
-    # smag_32_postprocess.compute_energy_only()
-
-    # cross_32_solver.solve()
-    # cross_32_postprocess.compute_energy_only()
-
-    # dns_32_solver.solve()
-    # dns_32_postprocess.compute_energy_only()
-
-    dns_32_ti_solver.solve()
-    dns_32_ti_postprocess.compute_energy_only()
-
-    # dns_42_solver.solve()
-    # dns_42_postprocess.compute_energy_only()
-
-    # dns_64_solver.solve()
-    # dns_64_postprocess.compute_energy_only()
-
-    # dns_128_solver.solve()
-    # dns_128_postprocess.compute_energy_only()
-
-    # dns_256_solver.solve()
-    # dns_256_postprocess.compute_energy_only()
+    dns_256_solver.solve()
+    dns_256_postprocess.compute_energy_only()
 
     # postprocesses = [
     #     dns_32_postprocess, dns_64_postprocess, 

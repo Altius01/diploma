@@ -5,30 +5,36 @@ from common.logger import Logger
 from common.data_service import DataService
 
 from taichi_src.common.types import *
+from taichi_src.spatial_computer.computers_fv import SystemComputer
 from taichi_src.spatial_computer.les_computers_fv import LesComputer
 
 @ti.data_oriented
 class TiSolver:
     def __init__(self, config, data_path='', arch=ti.cpu):
-        # self.C = 0
-        # self.Y = 0
-        # self.D = 0
-
-        self.RHO0 = 1e0
-        self.U0 = 1e0
-        self.B0 = 1e0
+        self.RHO0 = config.RHO0
+        self.U0 = config.U0
+        self.B0 = config.B0
         self.eps_p = 1e-5
         self.h = [0, 0, 0]
-        self.Re = 1e3
-        self.Rem = 1e3
-        self.delta_hall = 1e1
-        self.Ma = 1e0
-        self.Ms = 1e0
-        self.gamma = 7.0/5.0
+        self.Re = config.Re
+        self.Rem = config.Rem
+        self.delta_hall = config.delta_hall
+        self.Ma = config.Ma
+        self.Ms = config.Ms
+        self.gamma = config.gamma
 
-        self.CFL = 0.9
+        self.CFL = config.CFL
 
         self.rk_steps = 3
+        self.les_model = NonHallLES(config.model)
+        self.ideal = config.ideal
+        self.hall = config.hall
+
+        Logger.log(f'Starting with:')
+        Logger.log(f'   CFL: {self.CFL}, LES_Model: {self.les_model}, Ideal: {self.ideal}, Hall: {self.hall}')
+        Logger.log(f'   Re: {self.Re}, Rem: {self.Rem}, delta_hall: {self.delta_hall}, Ma: {self.Ma}, Ms: {self.Ms}, gamma: {self.gamma}')
+
+        self.debug_fv_step = False
 
         self.config = config
         self.ghost = self.config.ghosts
@@ -38,7 +44,7 @@ class TiSolver:
 
         self.data_service = DataService(dir_name=data_path,rw_energy=self.config.rewrite_energy)
 
-        ti.init(arch=arch, debug=True)
+        ti.init(arch=arch, debug=True, device_memory_GB=8)
 
         self.u = [ti.Vector.field(n=3, dtype=double, shape=self.config.shape) for i in range(self.rk_steps)]
         self.B = [ti.Vector.field(n=3, dtype=double, shape=self.config.shape) for i in range(self.rk_steps)]
@@ -46,9 +52,8 @@ class TiSolver:
         self.rho = [ti.field(dtype=double, shape=self.config.shape) for i in range(self.rk_steps)]
 
         self.fv_computer = LesComputer(self.gamma, self.Re, self.Ma, self.Ms, self.Rem, 
-            self.delta_hall, self.ghost, self.config.shape, self.h, self.config.domain_size, ideal=False, hall=True,
-            #  les=NonHallLES.DNS)
-             les=NonHallLES.SMAG)
+            self.delta_hall, self.ghost, self.config.shape, self.h, self.config.domain_size, ideal=self.ideal, hall=self.hall,
+             les=self.les_model)
 
     def read_file(self, i):
         self.current_time, rho_, p_, u_, B_ = self.data_service.read_data(i)
@@ -86,6 +91,7 @@ class TiSolver:
 
             # dT = 1e-1 * ( min(self.config.domain_size) / max(self.config.true_shape))**2
             dT = self.get_cfl()
+            # print(dT)
 
             self.current_time += dT
             self.current_step += 1
@@ -104,7 +110,7 @@ class TiSolver:
 
         return self.CFL / (
             (lambdas[0] / self.h[0] + lambdas[1] / self.h[1] + lambdas[2] / self.h[2]) 
-            + 2 * (1/self.h[0]**2 + 1/self.h[1]**2 / 1/self.h[2]**2)
+            + 2 * (1.0/self.h[0]**2 + 1.0/self.h[1]**2 + 1.0/self.h[2]**2)
         )
         # (1/self.Re + 1/self.Rem)
 
@@ -170,7 +176,11 @@ class TiSolver:
     def FV_step(self, dT):
         coefs = [(1, 0.5 * dT, 0), (1, 0.5 * dT, 0), (2.0/3.0, (2.0/3.0) * dT, 1.0/3.0)]
 
+        if (self.debug_fv_step):
+            print("update_les start...")
         self.fv_computer.update_les()
+        if (self.debug_fv_step):
+            print("update_les done!")
         for i, c in enumerate(coefs):
             
             i_next = (i + 1) % self.rk_steps
@@ -179,20 +189,34 @@ class TiSolver:
             if i_k == 0:
                 i_k += 1
 
+            if (self.debug_fv_step):
+                print("update_data start...")
             self.fv_computer.update_data(self.rho[i], self.p[i], self.u[i], self.B[i])
-
+            if (self.debug_fv_step):
+                print("update_data done!")
+                print("computeRho start...")
             self.fv_computer.computeRho(self.rho[i_k])
             self.fv_computer.ghosts_call(self.rho[i_k])
-
+            if (self.debug_fv_step):
+                print("computeRho done!")
+                print("computeB start...")
             self.fv_computer.computeB(self.B[i_k])
             self.fv_computer.ghosts_call(self.B[i_k])
-
+            if (self.debug_fv_step):
+                print("computeB done!")
+                print("computeRHO_U start...")
             self.fv_computer.computeRHO_U(self.u[i_k])
             self.fv_computer.ghosts_call(self.u[i_k])
-
+            if (self.debug_fv_step):
+                print("computeRHO_U done!")
+                print("sum_fields start...")
             self.sum_fields(self.rho[i], self.rho[i_k], self.rho[i_next], c[0], c[1], c[2])
             self.sum_fields_u(self.u[i], self.u[i_k], self.u[i_next], self.rho[i], self.rho[i_next], c[0], c[1], c[2])
             self.sum_fields(self.B[i], self.B[i_k], self.B[i_next], c[0], c[1], c[2])
-
+            if (self.debug_fv_step):
+                print("sum_fields done!")
+                print("computeP start...")
             self.fv_computer.computeP(self.p[i_next], self.rho[i_next])
             self.fv_computer.ghosts_call(self.p[i_next])
+            if (self.debug_fv_step):
+                print("computeP done!")

@@ -8,7 +8,7 @@ from taichi_src.common.boundaries import *
 
 @ti.data_oriented
 class TiDataProcessor:
-    def __init__(self, context, config, data_path=''):
+    def __init__(self, config, data_path=''):
         self.config = config
 
         self.data_service = DataService(dir_name=data_path,rw_energy=self.config.rewrite_energy)

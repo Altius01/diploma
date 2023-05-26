@@ -36,6 +36,10 @@ levi_chevita = np.array([
 ], dtype=np.float64)
 
 class NonHallLES(Enum):
-    DNS = 0
-    SMAG = 1
-    CROSS_HELICITY = 2
+    DNS = "DNS"
+    SMAG = "SMAGORINSKY"
+    CROSS_HELICITY = "CROSS_HELICITY"
+
+class Initials(Enum):
+    OT = "OT"
+    RAND = "RAND"

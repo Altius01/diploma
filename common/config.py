@@ -27,9 +27,26 @@ class Config:
     rw_del = 0
     rewrite_energy = True
     defines = []
-    initials = ""
+    # initials = ""
+    # similarity numbers
+    RHO0 = 1e0
+    U0 = 1e0
+    B0 = 1e0
+
+    Re = 1e3
+    Rem = 1e3
+    delta_hall = 1e1
+    Ma = 1e0
+    Ms = 1e0
+    gamma = 7.0/5.0
+
+    ideal = False
+    hall = False
+    
+    CFL = 0.9
 
     models = ['DNS', 'SMAGORINSKY', 'CROSS_HELICITY']
+    initials = ['OT', 'RAND']
 
     def __init__(self, file_path=Path.cwd() / "config.json"):
         self.file_path = file_path
@@ -48,7 +65,23 @@ class Config:
     "rw_delemiter": 10,
     "end_time": 0.1,
     "start_step": 0,
-    "model": "DNS"
+    "model": "DNS",
+    "initials": "OT",
+
+    "RHO0": 1.0,
+    "U0": 1.0,
+    "B0": 1.0,
+
+    "Re": 1000.0,
+    "Rem": 100.0,
+    "delta_hall": 1.0,
+    "Ma": 1.0,
+    "Ms": 1.0,
+    "gamma": 1.4,
+
+    "ideal": false,
+    "hall": false,
+    "CFL": 0.9
 }
         """
 
@@ -90,7 +123,23 @@ class Config:
 
             self.initials = data.get("initials", "ot")
 
-            self._generate_defines()
+            self.RHO0 = data.get("RHO0", 1.0)
+            self.U0 = data.get("U0", 1.0)
+            self.B0 = data.get("B0", 1.0)
+
+            self.Re = data.get("Re", 1000)
+            self.Rem = data.get("Rem", 100)
+            self.delta_hall = data.get("delta_hall", 1.0)
+            self.Ma = data.get("Ma", 1.0)
+            self.Ms = data.get("Ms", 0.2)
+            self.gamma = data.get("gamma", (7.0/5.0))
+
+            self.ideal = data.get("ideal", False)
+            self.hall = data.get("hall", False)
+
+            self.CFL = data.get("CFL", 0.9)
+
+            # self._generate_defines()
             
             if self.start_step == 0:
                 self.rewrite_energy = True
