@@ -91,7 +91,7 @@ def save_spectrum(solver, idx):
 
 
 PATH_CWD = Path('.')
-DNS_256_DATA_PATH =  PATH_CWD / 'DNS_256'
+DNS_256_DATA_PATH =  PATH_CWD / 'DNS_256_hall'
 DNS_256_CONFIG_PATH = PATH_CWD / 'dns_256_config.json'
 
 DNS_128_DATA_PATH = PATH_CWD / 'DNS_128'

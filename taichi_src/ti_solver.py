@@ -34,7 +34,7 @@ class TiSolver:
         Logger.log(f'   CFL: {self.CFL}, LES_Model: {self.les_model}, Ideal: {self.ideal}, Hall: {self.hall}')
         Logger.log(f'   Re: {self.Re}, Rem: {self.Rem}, delta_hall: {self.delta_hall}, Ma: {self.Ma}, Ms: {self.Ms}, gamma: {self.gamma}')
 
-        self.debug_fv_step = False
+        self.debug_fv_step = True
 
         self.config = config
         self.ghost = self.config.ghosts
