@@ -13,7 +13,8 @@ def _get_ghost_new_idx(ghost, size, idx):
 def get_ghost_new_idx(ghost, shape, idx):
     new_idx = idx
     
-    for i in ti.static(range(3)):
-        new_idx[i] = _get_ghost_new_idx(ghost, shape[i], idx[i])
+    new_idx[0] = _get_ghost_new_idx(ghost, shape[0], idx[0])
+    new_idx[1] = _get_ghost_new_idx(ghost, shape[1], idx[1])
+    new_idx[2] = _get_ghost_new_idx(ghost, shape[2], idx[2])
 
     return new_idx

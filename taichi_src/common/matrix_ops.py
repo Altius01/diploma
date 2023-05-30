@@ -17,32 +17,45 @@ def static_get_len(a):
 
 
 @ti.func
-def norm_dot(a: ti.template(), b: ti.template()):
-    len_shape = ti.static(static_get_shape(a))
+def norm_dot_sc(a: ti.template(), b: ti.template()):
+    result = ti.sqrt(ti.abs(a*b))
 
+    return result
+
+@ti.func
+def norm_dot_vec(a: ti.template(), b: ti.template()):
+    result = (a * b).norm()
+    
+    return result
+
+@ti.func
+def norm_dot_mat(a: ti.template(), b: ti.template()):
     result = double(0.0)
-    if ti.static(len_shape == 0):
-        result = ti.sqrt(a * b)
-    elif ti.static(len_shape == 1):
-        result = (a * b).norm()
-    elif ti.static(len_shape == 2):
-        for i, j in ti.static(ti.ndrange(a.n, a.m)):
-            result += a[i, j] * b[i, j]
-        result = ti.sqrt(result)
+    for i, j in ti.ndrange(a.n, a.m):
+        result += a[i, j] * b[i, j]
+    
+    result = ti.sqrt(ti.abs(result))
+    return result
+
+@ti.func
+def norm_sqr_dot_mat(a: ti.template(), b: ti.template()):
+    result = double(0.0)
+    for i, j in ti.ndrange(a.n, a.m):
+        result += a[i, j] * b[i, j]
     
     return result
 
 
 @ti.func
-def hadamar_dot(a: ti.template(), b: ti.template()):
-    len_shape = ti.static(static_get_shape(a))
+def hadamar_dot_vec(a: ti.template(), b: ti.template()):
+    return a * b
 
+@ti.func
+def hadamar_dot_mat(a: ti.template(), b: ti.template()):
     result = a
-    if ti.static(len_shape in [0, 1]):
-        result = a * b
-    elif ti.static(len_shape == 2):
-        for i, j in ti.static(ti.ndrange(a.n, a.m)):
-            result[i, j] = a[i, j] * b[i, j]
+
+    for i, j in ti.ndrange(a.n, a.m):
+        result[i, j] = a[i, j] * b[i, j]
     
     return result
 
@@ -50,51 +63,50 @@ def hadamar_dot(a: ti.template(), b: ti.template()):
 @ti.func
 def trace_sqr(arr: mat3x3):
     result = double(0.0)
-    for i in ti.static(range(3)):
+    for i in ti.ndrange(3):
         result += arr[i, i]**2
+
+    return result
+
+@ti.func
+def trace(arr: mat3x3):
+    result = double(0.0)
+    for i in ti.ndrange(3):
+        result += arr[i, i]
+
+    return result
+    
+
+@ti.func
+def get_mat_row(arr: ti.template(), idx: int):
+    result = arr[0, :]
+    if idx == 1:
+        result = arr[1, :]
+    elif idx == 2:
+        result = arr[2, :]
 
     return result
 
 
 @ti.func
-def get_mat_row(arr: ti.template(), idx: int):
-    shape = ti.static(arr.get_shape())
+def get_mat_col(arr: ti.template(), idx: int):
+    result = arr[:, 0]
+    if idx == 1:
+        result = arr[:, 1]
+    elif idx == 2:
+        result = arr[:, 2]
 
-    if ti.static(len(shape) == 1):
-        result = arr
-
-        return result
-    elif ti.static(len(shape) == 2):
-        result = arr[0, :]
-        if idx == 1:
-            result = arr[1, :]
-        elif idx == 2:
-            result = arr[2, :]
-
-        return result
-
+    return result
 
 @ti.func
-def get_mat_col(arr: ti.template(), idx: int):
-    shape = ti.static(arr.get_shape())
-
-    if ti.static(len(shape) == 1):
-        result = arr[0]
-        if idx == 1:
-            result = arr[1]
-        elif idx == 2:
-            result = arr[2]
-        
-        return result
-    elif ti.static(len(shape) == 2):
-        result = arr[:, 0]
-        if idx == 1:
-            result = arr[:, 1]
-        elif idx == 2:
-            result = arr[:, 2]
-
-        return result
-    return 0
+def get_vec_col(arr: ti.template(), idx: int):
+    result = arr[0]
+    if idx == 1:
+        result = arr[1]
+    elif idx == 2:
+        result = arr[2]
+    
+    return result
 
 
 @ti.func

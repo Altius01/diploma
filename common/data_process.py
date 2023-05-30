@@ -76,8 +76,9 @@ class MHD_DataProcessor:
         while self.current_time <= self.config.end_time:
             Logger.log(f"Step: {self.curr_step}: start.")
             self.read_file(self.curr_step)
-
+            Logger.log(f"   Step: {self.curr_step}: compute_kin_energy start.")
             self.kin_energy.append(self.compute_kin_energy(self.curr_step))
+            Logger.log(f"   Step: {self.curr_step}: compute_mag_energy start.")
             self.mag_energy.append(self.compute_mag_energy(self.curr_step))
             self.time_energy.append(self.current_time)
             Logger.log(f'Step: {self.curr_step}: done!')

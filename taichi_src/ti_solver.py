@@ -34,7 +34,8 @@ class TiSolver:
         Logger.log(f'   CFL: {self.CFL}, LES_Model: {self.les_model}, Ideal: {self.ideal}, Hall: {self.hall}')
         Logger.log(f'   Re: {self.Re}, Rem: {self.Rem}, delta_hall: {self.delta_hall}, Ma: {self.Ma}, Ms: {self.Ms}, gamma: {self.gamma}')
 
-        self.debug_fv_step = True
+        # self.debug_fv_step = True
+        self.debug_fv_step = False
 
         self.config = config
         self.ghost = self.config.ghosts
@@ -44,14 +45,14 @@ class TiSolver:
 
         self.data_service = DataService(dir_name=data_path,rw_energy=self.config.rewrite_energy)
 
-        ti.init(arch=arch, debug=True, device_memory_GB=8)
+        # ti.init(arch=arch, debug=True, device_memory_GB=8)
 
         self.u = [ti.Vector.field(n=3, dtype=double, shape=self.config.shape) for i in range(self.rk_steps)]
         self.B = [ti.Vector.field(n=3, dtype=double, shape=self.config.shape) for i in range(self.rk_steps)]
         self.p = [ti.field(dtype=double, shape=self.config.shape) for i in range(self.rk_steps)]
         self.rho = [ti.field(dtype=double, shape=self.config.shape) for i in range(self.rk_steps)]
 
-        self.fv_computer = LesComputer(self.gamma, self.Re, self.Ma, self.Ms, self.Rem, 
+        self.fv_computer = LesComputer(self.gamma, self.Re, self.Ms, self.Ma, self.Rem, 
             self.delta_hall, self.ghost, self.config.shape, self.h, self.config.domain_size, ideal=self.ideal, hall=self.hall,
              les=self.les_model)
 
@@ -98,8 +99,8 @@ class TiSolver:
 
             self.FV_step(dT)
 
-            if self.config.model.lower() != 'dns':
-                self.compute_coefs()
+            # if self.config.model.lower() != 'dns':
+            #     self.compute_coefs()
 
             if self.current_step % self.config.rw_del == 0:
                 self.save_file(self.current_step)
@@ -180,6 +181,7 @@ class TiSolver:
             print("update_les start...")
         self.fv_computer.update_les()
         if (self.debug_fv_step):
+            print(f'    Les coefs: C:{self.fv_computer.C}, Y:{self.fv_computer.Y}, D: {self.fv_computer.D}')
             print("update_les done!")
         for i, c in enumerate(coefs):
             

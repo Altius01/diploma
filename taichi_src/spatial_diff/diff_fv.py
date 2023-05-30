@@ -2,7 +2,7 @@ import numpy as np
 import taichi as ti
 
 from taichi_src.common.types import *
-from taichi_src.common.pointers import get_elem
+from taichi_src.common.pointers import *
 
 @ti.func
 def V_plus_vec(foo: ti.template(), idx):
@@ -58,8 +58,8 @@ def dx_vec(foo: ti.template(), axe, diff_axe, h, idx):
     for i, j in (ti.ndrange(2, 2)):
         new_idx_l = idx + get_dx_st(diff_axe, i, j, left=True)
         new_idx_r = idx + get_dx_st(diff_axe, i, j, left=False)
-        result += ( get_elem(foo(new_idx_r), axe) 
-            - get_elem(foo(new_idx_l), axe) ) / h
+        result += ( get_elem_1d(foo(new_idx_r), axe) 
+            - get_elem_1d(foo(new_idx_l), axe) ) / h
 
     return result / 4.0
 
@@ -67,8 +67,9 @@ def dx_vec(foo: ti.template(), axe, diff_axe, h, idx):
 def grad_sc(foo: ti.template(), h: ti.template(), idx):
     result = vec3(0)
 
-    for i in ti.static(ti.ndrange(result.n)):
-        result[i] = dx_sc(foo, i, h[i], idx)
+    result[0] = dx_sc(foo, 0, h[0], idx)
+    result[1] = dx_sc(foo, 1, h[1], idx)
+    result[2] = dx_sc(foo, 2, h[2], idx)
 
     return result
 
@@ -95,6 +96,6 @@ def rot_vec(foo: ti.template(), h: ti.template(), idx):
     result = vec3(0)
 
     for i, j, k in (ti.ndrange(result.n, result.n, result.n)):
-        result[i] += get_elem(levi_chevita, [i, j, k]) * dx_vec(foo, k, j, get_elem(h, j), idx)
+        result[i] += get_elem_3d(levi_chevita, [i, j, k]) * dx_vec(foo, k, j, get_elem_1d(h, j), idx)
 
     return result

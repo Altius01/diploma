@@ -1,45 +1,65 @@
 import taichi as ti
 
 from taichi_src.common.types import *
-from taichi_src.common.matrix_ops import norm_dot, trace_sqr
+from taichi_src.common.matrix_ops import *
+
+# @ti.kernel
+# def knl_norm_field_sc(a: ti.template(), b:ti.template(), out: ti.template()):
+#     for idx in ti.grouped(out):
+#         out[idx] = norm_dot_sc(a[idx], b[idx])
+
+# @ti.kernel
+# def knl_norm_field_vec(a: ti.template(), b:ti.template(), out: ti.template()):
+#     for idx in ti.grouped(out):
+#         out[idx] = a[idx].dot(b[idx])
 
 @ti.kernel
-def knl_norm_field(a: ti.template(), b:ti.template(), out: ti.template()):
+def knl_norm_field_mat(a: ti.template(), b:ti.template(), out: ti.template()):
     for idx in ti.grouped(out):
-        out[idx] = norm_dot(a[idx], b[idx])
+        out[idx] = norm_dot_mat(a[idx], b[idx])
 
-def norm_field(a, b):
-    assert(a.shape == b.shape)
-    out = ti.field(dtype=a.dtype, shape=a.shape)
-    out.fill(0)
+@ti.kernel
+def knl_norm_sqr_field_mat(a: ti.template(), b:ti.template(), out: ti.template()):
+    for idx in ti.grouped(out):
+        out[idx] = norm_sqr_dot_mat(a[idx], b[idx])
 
-    knl_norm_field(a, b, out)
-    return out
+# def norm_field(a, b):
+#     assert(a.shape == b.shape)
+#     out = ti.field(dtype=a.dtype, shape=a.shape)
+#     out.fill(0)
+
+#     knl_norm_field(a, b, out)
+#     return out
 
 @ti.kernel
 def knl_tr_field(a: ti.template(), out: ti.template()):
     for idx in ti.grouped(out):
         out[idx] = a.trace()
 
-def tr_field(a, b):
-    assert(a.shape == b.shape)
-    out = ti.field(dtype=a.dtype, shape=a.shape)
-    out.fill(0)
+# def tr_field(a, b):
+#     assert(a.shape == b.shape)
+#     out = ti.field(dtype=a.dtype, shape=a.shape)
+#     out.fill(0)
 
-    knl_tr_sqr_field(a, b, out)
-    return out
+#     knl_tr_sqr_field(a, b, out)
+#     return out
 
 @ti.kernel
 def knl_tr_sqr_field(a: ti.template(), out: ti.template()):
     for idx in ti.grouped(out):
         out[idx] = trace_sqr(a[idx])
 
-def tr_sqr_field(a):
-    out = ti.field(dtype=a.dtype, shape=a.shape)
-    out.fill(0)
+@ti.kernel
+def knl_tr_field(a: ti.template(), out: ti.template()):
+    for idx in ti.grouped(out):
+        out[idx] = trace(a[idx])
 
-    knl_tr_sqr_field(a, out)
-    return out
+# def tr_sqr_field(a):
+#     out = ti.field(dtype=a.dtype, shape=a.shape)
+#     out.fill(0)
+
+#     knl_tr_sqr_field(a, out)
+#     return out
 
 @ti.kernel
 def knl_field_div(a: ti.template(), b:ti.template()):
@@ -55,20 +75,22 @@ def knl_sum_field(field: ti.template(), s: ti.template()):
     for idx in ti.grouped(field):
         s[None] += field[idx]
 
-def sum_sc_field(field):
-    s = ti.field(double, shape=())
+class Sum:
+    s_sc = ti.field(double, shape=())
+    s_vec = ti.Vector.field(n=3, dtype=double, shape=())
+    s_mat = ti.Matrix.field(n=3, m=3, dtype=double, shape=())
 
-    knl_sum_field(field, s)
-    return s[None]
+    def sum_sc_field(field):
+        Sum.s_sc[None] = 0
+        knl_sum_field(field, Sum.s_sc)
+        return  Sum.s_sc[None]
 
-def sum_vec_field(field):
-    s = ti.Vector.field(n=3, dtype=double, shape=())
+    def sum_vec_field(field):
+        Sum.s_vec[None] = vec3(0)
+        knl_sum_field(field, Sum.s_vec)
+        return  Sum.s_vec[None]
 
-    knl_sum_field(field, s)
-    return s[None]
-
-def sum_mat_field(field):
-    s = ti.Matrix.field(n=3, m=3, dtype=double, shape=())
-
-    knl_sum_field(field, s)
-    return s[None]
+    def sum_mat_field(field):
+        Sum.s_mat[None] = mat3x3(0)
+        knl_sum_field(field, Sum.s_mat)
+        return  Sum.s_mat[None]

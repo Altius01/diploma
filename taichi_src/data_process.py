@@ -4,6 +4,7 @@ import taichi as ti
 from logger import Logger
 from data_service import DataService
 
+from taichi_src.common.types import *
 from taichi_src.common.boundaries import *
 
 @ti.data_oriented
@@ -34,10 +35,13 @@ class TiDataProcessor:
         return result
 
     def _init_device_data(self):
-        self.u = ti.Vector.field(n=3, dtype=ti.f64, shape=self.config.shape)
-        self.B = ti.Vector.field(n=3, dtype=ti.f64, shape=self.config.shape)
-        self.p = ti.field(dtype=ti.f64, shape=self.config.shape)
-        self.rho = ti.field(dtype=ti.f64, shape=self.config.shape)
+        self.u = ti.Vector.field(n=3, dtype=double, shape=self.config.shape)
+        self.B = ti.Vector.field(n=3, dtype=double, shape=self.config.shape)
+        self.p = ti.field(dtype=double, shape=self.config.shape)
+        self.rho = ti.field(dtype=double, shape=self.config.shape)
+
+        self.kin_e_field = ti.field(ti.f32, shape=())
+        self.mag_e_field = ti.field(ti.f32, shape=())
 
     def read_file(self, i):
         self.current_step = i
@@ -65,18 +69,18 @@ class TiDataProcessor:
         if self.curr_step != i:
             self.read_file(i)
 
-        s = ti.field(ti.f32, shape=())
-        self._get_kin_energy(s)
-        return s[None] * self.config.dV
+        self.kin_e_field[None] = 0
+        self._get_kin_energy(self.kin_e_field)
+        return self.kin_e_field[None] * self.config.dV
         
 
     def compute_mag_energy(self, i):
         if self.curr_step != i:
             self.read_file(i)
 
-        s = ti.field(ti.f32, shape=())
-        self._get_mag_energy(s)
-        return s[None] * self.config.dV
+        self.mag_e_field[None] = 0
+        self._get_mag_energy(self.mag_e_field)
+        return self.mag_e_field[None] * self.config.dV
     
     def compute_energy_only(self, save_energy=True):
         Logger.log('Start computing energies:')
@@ -84,9 +88,12 @@ class TiDataProcessor:
         while self.current_time <= self.config.end_time:
             Logger.log(f"Step: {self.curr_step}: start.")
             self.read_file(self.curr_step)
-
+            Logger.log(f"   Step: {self.curr_step}: compute_kin_energy start.")
             self.kin_energy.append(self.compute_kin_energy(self.curr_step))
+            Logger.log(f"   Step: {self.curr_step}: compute_kin_energy done!")
+            Logger.log(f"   Step: {self.curr_step}: compute_mag_energy start.")
             self.mag_energy.append(self.compute_mag_energy(self.curr_step))
+            Logger.log(f"   Step: {self.curr_step}: compute_mag_energy done!")
             self.time_energy.append(self.current_time)
             Logger.log(f'Step: {self.curr_step}: done!')
             

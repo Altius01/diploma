@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from taichi_src.common.types import *
 from taichi_src.common.boundaries import *
 from taichi_src.common.matrix_ops import *
+from taichi_src.common.pointers import *
 from taichi_src.spatial_diff.diff_fv import *
 
 @ti.data_oriented
@@ -53,8 +54,9 @@ class SystemComputer:
     def check_ghost_idx(self, idx):
         result = False
 
-        for i in ti.static(range(idx.n)):
-            result = result or self._check_ghost(self.shape[i], idx[i])
+        result = result or self._check_ghost(self.shape[0], idx[0])
+        result = result or self._check_ghost(self.shape[1], idx[1])
+        result = result or self._check_ghost(self.shape[2], idx[2])
 
         return result
 
@@ -87,7 +89,6 @@ class SystemComputer:
             u[j] - c_s,
             u[j] + c_a,
             u[j] - c_a,
-            u[j],
             0,
         ])
 
@@ -105,8 +106,9 @@ class SystemComputer:
     def get_s_max(self, idx):
         result = vec3(0)
 
-        for i in ti.static(range(3)):
-            result[i] = self.get_s_j_max(i, idx)
+        result[0] = self.get_s_j_max(0, idx)
+        result[1] = self.get_s_j_max(1, idx)
+        result[2] = self.get_s_j_max(2, idx)
 
         return result
 
@@ -119,26 +121,72 @@ class SystemComputer:
         return result
 
     @ti.func
-    def flux_right(self, flux_conv: ti.template(), flux_viscos: ti.template(), 
+    def flux_mat_right(self, flux_conv: ti.template(), flux_viscos: ti.template(), 
         flux_hall: ti.template(), flux_les: ti.template(), Q: ti.template(), i, idx):
         idx_left = idx
         idx_right = idx + get_basis(i)
 
-        corner_left = idx - vec3i(1) + get_basis(i)
-        corner_right = idx
-
         s_max = self.get_s_j_max(i, idx)
 
-        result = ( get_mat_col(flux_conv(idx_left) + flux_conv(idx_right), i)
+        result = 0.5*( get_mat_col(flux_conv(idx_left) + flux_conv(idx_right), i)
             - s_max * (Q(idx_right) - Q(idx_left)) )
 
         if ti.static(self.ideal==False):
-            result -= get_mat_col(flux_viscos(corner_left) + flux_viscos(corner_right), i)
+            for j, k in ti.ndrange(2, 2):
+                corner = idx - vec3i(1) + get_dx_st(i, j, k, left=False)
+                result -= 0.25*get_mat_col(
+                    flux_viscos(corner)
+                    , i)
 
         if ti.static(self.hall):
-            result -= get_mat_col(flux_hall(corner_left) + flux_hall(corner_right), i)
+            for j, k in ti.ndrange(2, 2):
+                corner = idx - vec3i(1) + get_dx_st(i, j, k, left=False)
+                result -= 0.25*get_mat_col(
+                    flux_hall(corner)
+                    , i)
+            
+        if ti.static(self.les != NonHallLES.DNS):
+            for j, k in ti.ndrange(2, 2):
+                corner = idx - vec3i(1) + get_dx_st(i, j, k, left=False)
+                result -= 0.25*get_mat_col(
+                    flux_les(corner)
+                    , i)
         
-        return 0.5*result
+        return result
+    
+    @ti.func
+    def flux_vec_right(self, flux_conv: ti.template(), flux_viscos: ti.template(), 
+        flux_hall: ti.template(), flux_les: ti.template(), Q: ti.template(), i, idx):
+        idx_left = idx
+        idx_right = idx + get_basis(i)
+
+        s_max = self.get_s_j_max(i, idx)
+
+        result = 0.5*( get_vec_col(flux_conv(idx_left) + flux_conv(idx_right), i)
+            - s_max * (Q(idx_right) - Q(idx_left)) )
+
+        if ti.static(self.ideal==False):
+            for j, k in ti.ndrange(2, 2):
+                corner = idx - vec3i(1) + get_dx_st(i, j, k, left=False)
+                result -= 0.25*get_vec_col(
+                    flux_viscos(corner)
+                    , i)
+
+        if ti.static(self.hall):
+            for j, k in ti.ndrange(2, 2):
+                corner = idx - vec3i(1) + get_dx_st(i, j, k, left=False)
+                result -= 0.25*get_vec_col(
+                    flux_hall(corner)
+                    , i)
+            
+        if ti.static(self.les != NonHallLES.DNS):
+            for j, k in ti.ndrange(2, 2):
+                corner = idx - vec3i(1) + get_dx_st(i, j, k, left=False)
+                result -= 0.25*get_vec_col(
+                    flux_les(corner)
+                    , i)
+        
+        return result
 
     @ti.kernel
     def computeRho(self, out: ti.template()):
@@ -146,17 +194,17 @@ class SystemComputer:
         for idx in ti.grouped(self.rho):
             if not self.check_ghost_idx(idx):
                 res = double(0.0)
-                for j in ti.static(range(self.h.n)):
+                for j in range(self.h.n):
                     idx_r = idx
                     idx_l = idx - get_basis(j)
 
-                    flux_r = self.flux_right(computer.flux_convective, computer.flux_viscous,
+                    flux_r = self.flux_vec_right(computer.flux_convective, computer.flux_viscous,
                     computer.flux_hall, computer.flux_les, computer.Q, j, idx_r)
                     
-                    flux_l = self.flux_right(computer.flux_convective, computer.flux_viscous,
+                    flux_l = self.flux_vec_right(computer.flux_convective, computer.flux_viscous,
                     computer.flux_hall, computer.flux_les, computer.Q, j, idx_l)
 
-                    res -= (flux_r - flux_l) / self.h[j]
+                    res -= (flux_r - flux_l) / get_elem_1d(self.h, j)
                 out[idx] = res
 
     @ti.kernel
@@ -168,39 +216,39 @@ class SystemComputer:
     @ti.kernel
     def computeRHO_U(self, out: ti.template()):
         computer = self.u_computer
-        for idx in ti.grouped(self.rho):
+        for idx in ti.grouped(self.u):
             if not self.check_ghost_idx(idx):
                 res = vec3(0)
-                for j in ti.static(range(self.h.n)):
+                for j in range(self.h.n):
                     idx_r = idx
                     idx_l = idx - get_basis(j)
 
-                    flux_r = self.flux_right(computer.flux_convective, computer.flux_viscous,
+                    flux_r = self.flux_mat_right(computer.flux_convective, computer.flux_viscous,
                         computer.flux_hall, computer.flux_les, computer.Q, j, idx_r)
                     
-                    flux_l = self.flux_right(computer.flux_convective, computer.flux_viscous,
+                    flux_l = self.flux_mat_right(computer.flux_convective, computer.flux_viscous,
                     computer.flux_hall, computer.flux_les, computer.Q, j, idx_l)
 
-                    res -= (flux_r - flux_l) / self.h[j]
+                    res -= (flux_r - flux_l) / get_elem_1d(self.h, j)
                 out[idx] = res
 
     @ti.kernel
     def computeB(self, out: ti.template()):
         computer = self.B_computer
-        for idx in ti.grouped(self.rho):
+        for idx in ti.grouped(self.B):
             if not self.check_ghost_idx(idx):
                 res = vec3(0)
-                for j in ti.static(range(self.h.n)):
+                for j in range(self.h.n):
                     idx_r = idx
                     idx_l = idx - get_basis(j)
 
-                    flux_r = self.flux_right(computer.flux_convective, computer.flux_viscous,
+                    flux_r = self.flux_mat_right(computer.flux_convective, computer.flux_viscous,
                     computer.flux_hall, computer.flux_les, computer.Q, j, idx_r)
                     
-                    flux_l = self.flux_right(computer.flux_convective, computer.flux_viscous,
+                    flux_l = self.flux_mat_right(computer.flux_convective, computer.flux_viscous,
                     computer.flux_hall, computer.flux_les, computer.Q, j, idx_l)
 
-                    res -= (flux_r - flux_l) / self.h[j]
+                    res -= (flux_r - flux_l) / get_elem_1d(self.h, j)
                 out[idx] = res
 
     @ti.kernel
@@ -228,23 +276,23 @@ class SystemComputer:
         self.ghosts(out)
         return out
 
-    def get_sc_field_from_foo(self, foo):
-        out = ti.field(dtype=double, shape=self.shape)
+    def get_sc_field_from_foo(self, foo, out):
+        # out = ti.field(dtype=double, shape=self.shape)
         return self.get_field_from_foo(foo, out)
 
-    def get_vec_field_from_foo(self, foo):
-        out = ti.Vector.field(n=3, dtype=double, shape=self.shape)
+    def get_vec_field_from_foo(self, foo, out):
+        # out = ti.Vector.field(n=3, dtype=double, shape=self.shape)
         return self.get_field_from_foo(foo, out)
 
-    def get_mat_field_from_foo(self, foo):
-        out = ti.Matrix.field(n=3, m=3, dtype=double, shape=self.shape)
+    def get_mat_field_from_foo(self, foo, out):
+        # out = ti.Matrix.field(n=3, m=3, dtype=double, shape=self.shape)
         return self.get_field_from_foo(foo, out)
 
 
 
 @ti.data_oriented
 class Compute(ABC):
-    def __init__(self, h, filter_size=vec3i(0), les=NonHallLES.DNS):
+    def __init__(self, h, filter_size=vec3i(1), les=NonHallLES.DNS):
         self.h = h
         self.filter_size = filter_size
         self.filter_delta = self.h * self.filter_size
@@ -318,7 +366,7 @@ class RhoCompute(Compute):
 
 @ti.data_oriented
 class MomentumCompute(Compute):
-    def __init__(self, Re, Ma, h, filter_size=vec3i(0), les=NonHallLES.DNS):
+    def __init__(self, Re, Ma, h, filter_size=vec3i(1), les=NonHallLES.DNS):
         super().__init__(h, filter_size=filter_size, les=les)
         self.Re = Re
         self.Ma = Ma
@@ -384,11 +432,16 @@ class MomentumCompute(Compute):
     def get_S_abs(self, idx):
         S = self.get_S(idx)
         return ti.sqrt(2)*S.norm()
+    
+    @ti.func
+    def get_S_abs_sqr(self, idx):
+        S = self.get_S(idx)
+        return 2*S.norm_sqr()
 
 
 @ti.data_oriented
 class BCompute(Compute):
-    def __init__(self, Rem, delta_hall, h, filter_size=vec3i(0), les=NonHallLES.DNS):
+    def __init__(self, Rem, delta_hall, h, filter_size=vec3i(1), les=NonHallLES.DNS):
         super().__init__(h, filter_size=filter_size, les=les)
         self.Rem = Rem
         self.delta_hall = delta_hall

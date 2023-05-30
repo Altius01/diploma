@@ -1,6 +1,6 @@
 import taichi as ti
 
-from taichi_src.common.pointers import get_elem
+from taichi_src.common.pointers import *
 from taichi_src.common.field_ops import *
 from taichi_src.spatial_computer.computers_fv import *
     
@@ -14,8 +14,10 @@ class LesComputer(SystemComputer):
         self.C = 0
         self.Y = 0
 
-        self.u_computer = LesMomentumCompute(Re, Ma, self.h, filter_size=self.filter_size, les=les)
-        self.B_computer = LesBCompute(Rem, delta_hall, self.h, filter_size=self.filter_size, les=les)
+        self.u_computer = LesMomentumCompute(Re, Ma, self.h, les=les)
+        self.B_computer = LesBCompute(Rem, delta_hall, self.h, les=les)
+
+        self.init_les_arrays()
 
     def update_data(self, rho, p, u, B):
         self.u = u
@@ -41,10 +43,10 @@ class LesComputer(SystemComputer):
 
     @ti.func
     def foo_filter_1d(self, h, new_h, i, shape, idx):
-        idx_i = get_elem(idx, i)
-        shape_i = get_elem(shape, i)
-        h_i = get_elem(h, i)
-        new_h_i = get_elem(new_h, i)
+        idx_i = get_elem_1d(idx, i)
+        shape_i = get_elem_1d(shape, i)
+        h_i = get_elem_1d(h, i)
+        new_h_i = get_elem_1d(new_h, i)
 
         idx_i_left = idx_i
         idx_i_right = 0
@@ -66,6 +68,7 @@ class LesComputer(SystemComputer):
 
     @ti.kernel
     def knl_foo_filter(self, foo: ti.template(), out: ti.template(), h: vec3, new_h: vec3):
+        dV_new = new_h[0]*new_h[1]*new_h[2]
         for i, j, k in ti.ndrange(self.filter_old_shape[0], 
             self.filter_old_shape[1], self.filter_old_shape[2]):
             idx = [i, j, k]
@@ -84,56 +87,61 @@ class LesComputer(SystemComputer):
                 idx_new[2] = ti.cast(z_vec[k], int)
                 dV *= z_vec[k+2]
                 
-                out[idx_new] = foo(idx) * dV
+                out[idx_new] += (foo(idx) * dV )/ dV_new
 
     def foo_filter(self, foo, out, shape, new_h, h):
         self.filter_old_shape = shape
         self.knl_foo_filter(foo, out, h, new_h)
 
-    def filter_sc(self, foo, filter_size):
+    def create_filtered_sc(self, filter_size):
         new_shape, new_h = self.get_filtered_shape(filter_size)
 
         new_field = ti.field(dtype=double, shape=tuple(new_shape))
         new_field.fill(0)
-
-        self.foo_filter(foo, new_field, self.shape, new_h, self.h)
         return new_field
 
-    def filter_vec(self, foo, filter_size):
+    def filter_sc(self, foo, filter_size, out):
+        new_shape, new_h = self.get_filtered_shape(filter_size)
+
+        self.foo_filter(foo, out, self.shape, new_h, self.h)
+    
+    def create_filtered_vec(self, filter_size):
         new_shape, new_h = self.get_filtered_shape(filter_size)
 
         new_field = ti.Vector.field(n=3, dtype=double, shape=tuple(new_shape))
         new_field.fill(0)
-
-        self.foo_filter(foo, new_field, self.shape, new_h, self.h)
         return new_field
 
-    def filter_mat(self, foo, filter_size):
+    def filter_vec(self, foo, filter_size, out):
+        new_shape, new_h = self.get_filtered_shape(filter_size)
+
+        self.foo_filter(foo, out, self.shape, new_h, self.h)
+    
+    def create_filtered_mat(self, filter_size):
         new_shape, new_h = self.get_filtered_shape(filter_size)
 
         new_field = ti.Matrix.field(n=3, m=3, dtype=double, shape=tuple(new_shape))
         new_field.fill(0)
-
-        self.foo_filter(foo, new_field, self.shape, new_h, self.h)
         return new_field
 
-    def filter_favre_sc(self, foo, rho_filtered, filter_size):
-        foo_filtered = self.filter_sc(foo, filter_size)
+    def filter_mat(self, foo, filter_size, out):
+        new_shape, new_h = self.get_filtered_shape(filter_size)
+        self.foo_filter(foo, out, self.shape, new_h, self.h)
 
-        field_div(foo_filtered, rho_filtered)
-        return foo_filtered
+    def filter_favre_sc(self, foo, rho_filtered, filter_size, out):
+        self.filter_sc(foo, filter_size, out)
 
-    def filter_favre_vec(self, foo, rho_filtered, filter_size):
-        foo_filtered = self.filter_vec(foo, filter_size)
+        field_div(out, rho_filtered)
 
-        field_div(foo_filtered, rho_filtered)
-        return foo_filtered
+    def filter_favre_vec(self, foo, rho_filtered, filter_size, out):
+        self.filter_vec(foo, filter_size, out)
+
+        field_div(out, rho_filtered)
     
-    def filter_favre_mat(self, foo, rho_filtered, filter_size):
-        foo_filtered = self.filter_mat(foo, filter_size)
+    def filter_favre_mat(self, foo, rho_filtered, filter_size, out):
+        self.filter_mat(foo, filter_size, out)
 
-        field_div(foo_filtered, rho_filtered)
-        return foo_filtered
+        field_div(out, rho_filtered)
 
     @ti.kernel
     def get_Mu(self, Mu: ti.template(), Mu_a: ti.template(), alpha_hat: ti.template(), Su_hat: ti.template()):
@@ -143,8 +151,11 @@ class LesComputer(SystemComputer):
     @ti.kernel
     def get_Mu_kk(self, Mu_kk: ti.template(), Mu_kk_a: ti.template(), alpha_kk_hat: ti.template(), Su_abs_hat: ti.template()):
         for idx in ti.grouped(Mu_kk):
-            Mu_kk[idx] = alpha_kk_hat[idx] * Su_abs_hat[idx] - Mu_kk_a[idx]
-
+            Mu_kk[idx] = (
+                (alpha_kk_hat[idx] * Su_abs_hat[idx]) 
+                - Mu_kk_a[idx]
+            )
+            
     @ti.kernel
     def get_mB(self, mB: ti.template(), mB_a: ti.template(), phi_hat: ti.template(), J_hat: ti.template()):
         for idx in ti.grouped(mB):
@@ -155,25 +166,26 @@ class LesComputer(SystemComputer):
         Lu_b: ti.template(), rho_hat: ti.template(), 
         rhoU_hat: ti.template(), B_hat: ti.template()):
         for idx in ti.grouped(L):
-            L[idx] = ( Lu_a[idx] 
-                - rhoU_hat[idx].outer_product(rhoU_hat[idx]) / rho_hat[idx]
-                - (Lu_b[idx] - B_hat[idx].outer_product(B_hat[idx])) / self.Ma**2
+            L[idx] = (
+                 Lu_a[idx] 
+                - (rhoU_hat[idx].outer_product(rhoU_hat[idx]) / rho_hat[idx])
+                - (1/self.Ma**2)*(Lu_b[idx] - B_hat[idx].outer_product(B_hat[idx]))
             )
 
     @ti.kernel
     def get_Lb(self, L: ti.template(), Lb_a: ti.template(),
         rho_hat: ti.template(), rhoU_hat: ti.template(), B_hat: ti.template()):
         for idx in ti.grouped(L):
-            res = Lb_a[idx] - rhoU_hat[idx].outer_product(B_hat[idx]) / rho_hat[idx]
+            res = Lb_a[idx] - ( rhoU_hat[idx].outer_product(B_hat[idx]) / rho_hat[idx] )
             L[idx] = res - res.transpose()
 
     @ti.func
     def get_Su(self, idx):
-        return self.Su[idx]
+        return self.rho[idx]*self.Su[idx]
 
     @ti.func
     def get_Mu_a(self, idx):
-        return self.Mu_a[idx]
+        return self.rho[idx]*self.Mu_a[idx]
 
     @ti.func
     def get_alpha_ij(self, idx):
@@ -193,88 +205,140 @@ class LesComputer(SystemComputer):
 
     @ti.func
     def get_Su_abs(self, idx):
-        return self.Su_abs[idx]
+        return self.rho[idx]*self.Su_abs[idx]
 
     @ti.func
     def get_Mu_kk_a(self, idx):
-        return self.Mu_kk_a[idx]
+        return self.rho[idx]*self.Mu_kk_a[idx]
 
     @ti.func
     def get_alpha_kk(self, idx):
         return self.alpha_kk[idx]
+    
+    def init_les_arrays(self):
+        self.les_consts_filter_size = vec3i([2, 2, 2])
+        filter_size = self.les_consts_filter_size
+        self.rho_hat = self.create_filtered_sc(filter_size)
+        self.rhoU_hat = self.create_filtered_vec(filter_size)
+        self.B_hat = self.create_filtered_vec(filter_size)
+
+        self.Lu_a_hat = self.create_filtered_mat(filter_size)
+        self.Lu_b_hat = self.create_filtered_mat(filter_size)
+        
+        
+        self.Lu = self.create_filtered_mat(filter_size)
+
+        self.Lb_a = self.create_filtered_mat(filter_size)
+        self.LB = self.create_filtered_mat(filter_size)
+
+        self.Su = ti.Matrix.field(n=3, m=3, dtype=double, shape=self.shape)
+        self.Mu_a = ti.Matrix.field(n=3, m=3, dtype=double, shape=self.shape)
+        self.alpha_ij = ti.field(dtype=double, shape=self.shape)
+        
+        self.Mu_a_hat = self.create_filtered_mat(filter_size)
+        self.Su_hat = self.create_filtered_mat(filter_size)
+        self.alpha_ij_hat = self.create_filtered_sc(filter_size)
+
+        self.Mu = self.create_filtered_mat(filter_size)
+
+        self.J = ti.Matrix.field(n=3, m=3, dtype=double, shape=self.shape)
+        self.mB_a = ti.Matrix.field(n=3, m=3, dtype=double, shape=self.shape)
+        self.phi = ti.field(dtype=double, shape=self.shape)
+
+        self.phi_hat =  self.create_filtered_sc(filter_size)
+        self.mB_a_hat = self.create_filtered_mat(filter_size)
+        self.J_hat = self.create_filtered_mat(filter_size)
+
+        self.mB = self.create_filtered_mat(filter_size)
+
+        self.Su_abs = ti.field(dtype=double, shape=self.shape)
+        self.Mu_kk_a = ti.field(dtype=double, shape=self.shape)
+        self.alpha_kk = ti.field(dtype=double, shape=self.shape)
+
+        self.Su_abs_hat = self.create_filtered_sc(filter_size)
+        self.Mu_kk_a_hat = self.create_filtered_sc(filter_size)
+        self.alpha_kk_hat = self.create_filtered_sc(filter_size)
+
+        self.Mu_kk = self.create_filtered_sc(filter_size)
+
+        self.LuM_field = self.create_filtered_sc(filter_size)
+
+        self.MM_field = self.create_filtered_sc(filter_size)
+
+        self.Lkk_field = self.create_filtered_sc(filter_size)
+
+        self.LbmB_field = self.create_filtered_sc(filter_size)
+
+        self.mBmB_field = self.create_filtered_sc(filter_size)
+
 
     def get_les_consts(self):
-        filter_size = vec3i(2, 2, 2)
+        filter_size = self.les_consts_filter_size
         
-        rho_hat = self.filter_sc(self.rho_computer.Q, filter_size)
-        rhoU_hat = self.filter_vec(self.u_computer.Q, filter_size)
-        B_hat = self.filter_vec(self.B_computer.Q, filter_size)
+        self.filter_sc(self.rho_computer.Q, filter_size=filter_size, out=self.rho_hat)
+        self.filter_vec(self.u_computer.Q, filter_size=filter_size, out=self.rhoU_hat)
+        self.filter_vec(self.B_computer.Q, filter_size=filter_size, out=self.B_hat)
 
-        Lu_a_hat = self.filter_mat(self.u_computer.Lu_a, filter_size)
-        Lu_b_hat = self.filter_mat(self.u_computer.Lu_b, filter_size)
-        Lu = ti.Matrix.field(n=3, m=3, dtype=rho_hat.dtype, shape=rho_hat.shape)
-        self.get_Lu(Lu, Lu_a_hat, Lu_b_hat, rho_hat, rhoU_hat, B_hat)
-
-        Lb_a = self.filter_mat(self.B_computer.Lb_a, filter_size)
-        LB = ti.Matrix.field(n=3, m=3, dtype=rho_hat.dtype, shape=rho_hat.shape)
-        self.get_Lb(LB, Lb_a, rho_hat, rhoU_hat, B_hat)
-
-        self.Su = self.get_mat_field_from_foo(self.u_computer.get_S)
-        self.Mu_a = self.get_mat_field_from_foo(self.u_computer.get_Mu_a)
-        self.alpha_ij = self.get_sc_field_from_foo(self.u_computer.get_alpha)
+        self.filter_mat(self.u_computer.Lu_a, filter_size=filter_size, out=self.Lu_a_hat)
+        self.filter_mat(self.u_computer.Lu_b, filter_size=filter_size, out=self.Lu_b_hat)
+    
+        self.get_Lu(self.Lu, self.Lu_a_hat, self.Lu_b_hat, self.rho_hat, self.rhoU_hat, self.B_hat)
         
-        Mu_a_hat = self.filter_favre_mat(self.get_Mu_a, rho_hat, filter_size)
-        Su_hat = self.filter_favre_mat(self.get_Su, rho_hat, filter_size)
-        alpha_ij_hat = self.filter_sc(self.get_alpha_ij, filter_size)
+        self.filter_mat(self.B_computer.Lb_a, filter_size=filter_size, out=self.Lb_a)
+        self.get_Lb(self.LB, self.Lb_a, self.rho_hat, self.rhoU_hat, self.B_hat)
 
-        Mu = ti.Matrix.field(n=3, m=3, dtype=rho_hat.dtype, shape=rho_hat.shape)
-        self.get_Mu(Mu, Mu_a_hat, alpha_ij_hat, Su_hat)
+        self.get_mat_field_from_foo(self.u_computer.get_S, out=self.Su)
+        self.get_mat_field_from_foo(self.u_computer.get_Mu_a, out=self.Mu_a)
+        self.get_sc_field_from_foo(self.u_computer.get_alpha, out=self.alpha_ij)
+        
+        self.filter_favre_mat(self.get_Mu_a, self.rho_hat, filter_size=filter_size, out=self.Mu_a_hat)
+        self.filter_favre_mat(self.get_Su, self.rho_hat, filter_size=filter_size, out=self.Su_hat)
+        self.filter_sc(self.get_alpha_ij, filter_size=filter_size, out=self.alpha_ij_hat)
+        
+        self.get_Mu(self.Mu, self.Mu_a_hat, self.alpha_ij_hat, self.Su_hat)
 
-        self.J = self.get_mat_field_from_foo(self.B_computer.get_J)
-        self.mB_a = self.get_mat_field_from_foo(self.B_computer.get_mB_a)
-        self.phi = self.get_sc_field_from_foo(self.B_computer.get_phi)
+        self.get_mat_field_from_foo(self.B_computer.get_J, out=self.J)
+        self.get_mat_field_from_foo(self.B_computer.get_mB_a, out=self.mB_a)
+        self.get_sc_field_from_foo(self.B_computer.get_phi, out=self.phi)
 
-        phi_hat = self.filter_sc(self.get_phi, filter_size)
-        mB_a_hat = self.filter_mat(self.get_mB_a, filter_size)
-        J_hat = self.filter_mat(self.get_J, filter_size)
+        self.filter_sc(self.get_phi, filter_size=filter_size, out=self.phi_hat)
+        self.filter_mat(self.get_mB_a, filter_size=filter_size, out=self.mB_a_hat)
+        self.filter_mat(self.get_J, filter_size=filter_size, out=self.J_hat)
 
-        mB = ti.Matrix.field(n=3, m=3, dtype=rho_hat.dtype, shape=rho_hat.shape)
-        self.get_mB(mB, mB_a_hat, phi_hat, J_hat)
+        self.get_mB(self.mB, self.mB_a_hat, self.phi_hat, self.J_hat)
 
-        self.Su_abs = self.get_sc_field_from_foo(self.u_computer.get_S_abs)
-        self.Mu_kk_a = self.get_sc_field_from_foo(self.u_computer.get_tr_Mu_a)
-        self.alpha_kk = self.get_sc_field_from_foo(self.u_computer.get_tr_alpha)
+        self.get_sc_field_from_foo(self.u_computer.get_S_abs, out=self.Su_abs)
+        self.get_sc_field_from_foo(self.u_computer.get_tr_Mu_a, out=self.Mu_kk_a)
+        self.get_sc_field_from_foo(self.u_computer.get_tr_alpha, out=self.alpha_kk)
 
-        Su_abs_hat = self.filter_favre_sc(self.get_Su_abs, rho_hat, filter_size)
-        Mu_kk_a_hat = self.filter_favre_sc(self.get_Mu_kk_a, rho_hat, filter_size)
-        alpha_kk_hat = self.filter_sc(self.get_alpha_kk, filter_size)
+        self.filter_favre_sc(self.get_Su_abs, self.rho_hat, filter_size=filter_size, out=self.Su_abs_hat)
+        self.filter_favre_sc(self.get_Mu_kk_a, self.rho_hat, filter_size=filter_size, out=self.Mu_kk_a_hat)
+        self.filter_sc(self.get_alpha_kk, filter_size=filter_size, out=self.alpha_kk_hat)
 
-        Mu_kk = ti.field(dtype=rho_hat.dtype, shape=rho_hat.shape)
-        self.get_Mu_kk(Mu_kk, Mu_kk_a_hat, alpha_kk_hat, Su_abs_hat)
+        self.get_Mu_kk(self.Mu_kk, self.Mu_kk_a_hat, self.alpha_kk_hat, self.Su_abs_hat)
+        knl_norm_sqr_field_mat(self.Lu, self.Mu, self.LuM_field)
+    
+        LuM = Sum.sum_sc_field(self.LuM_field)
+        knl_norm_sqr_field_mat(self.Mu, self.Mu, self.MM_field)
+        
+        MM_mean = Sum.sum_sc_field(self.MM_field)
+        knl_tr_field(self.Lu, self.Lkk_field)
 
-        LuM_field = norm_field(Lu, Lu)
+        Lkk_mean = Sum.sum_mat_field(self.Lu).trace()
 
-        LuM = sum_sc_field(LuM_field)
+        Mu_kk_mean = Sum.sum_sc_field(self.Mu_kk)
 
-        MM_field = norm_field(Mu, Mu)
+        knl_norm_sqr_field_mat(self.LB, self.mB, self.LbmB_field)
 
-        MM = sum_sc_field(MM_field)
+        LbmB = Sum.sum_sc_field(self.LbmB_field)
 
-        Lkk_field = tr_sqr_field(Lu)
+        knl_norm_sqr_field_mat(self.mB, self.mB, self.mBmB_field)
 
-        Lkk_mean = sum_sc_field(Lkk_field)
+        mBmB = Sum.sum_sc_field(self.mBmB_field)
 
-        Mu_kk_mean = sum_sc_field(Mu_kk)
-
-        LbmB_field = norm_field(LB, mB)
-
-        LbmB = sum_sc_field(LbmB_field)
-
-        mBmB_field = norm_field(mB, mB)
-
-        mBmB = sum_sc_field(mBmB_field)
-
-        self.C = LuM / MM
+        # print(LuM, Lkk_mean, LbmB)
+        # print(MM_mean, Mu_kk_mean, mBmB)
+        self.C = LuM / MM_mean
         self.Y = Lkk_mean / Mu_kk_mean
         self.D = LbmB / mBmB
 
@@ -290,7 +354,7 @@ class LesMomentumCompute(MomentumCompute):
         S = 0.5*(gradU + gradU.transpose())
 
         nu = self.get_nu(idx)
-        return self.C * nu[0] * (S - (1.0/3.0) * S.trace() * kron) + (1.0/3.0) * self.Y * nu[1] * kron
+        return self.C * nu[0] * (S - (1.0/3.0) * S.trace() * kron) + (1.0/3.0) * self.Y * nu[1] * self.get_S_abs(idx) * kron
 
     @ti.func
     def get_nu(self, idx):
@@ -308,9 +372,9 @@ class LesMomentumCompute(MomentumCompute):
     @ti.func
     def nu_t_smag(self, idx):
         gradU = grad_vec(self.V, self.h, idx)
-        S = 0.5*(gradU + gradU.transpose())
-        nu_0 = - 2 * self.filter_delta.norm_sqr() * self.rho[idx] * ti.sqrt(2) * S.norm()
-        nu_1 = 2 * self.filter_delta.norm_sqr() * self.rho[idx] * 2 * S.norm_sqr()
+
+        nu_0 = - 2 * self.filter_delta.norm_sqr() * self.rho[idx] * self.get_S_abs(idx)
+        nu_1 = 2 * self.filter_delta.norm_sqr() * self.rho[idx] * self.get_S_abs(idx)
         return vec2([nu_0, nu_1])
 
     @ti.func
@@ -321,10 +385,10 @@ class LesMomentumCompute(MomentumCompute):
         S = 0.5*(gradU + gradU.transpose())
         S_b = 0.5*(gradB + gradB.transpose())
 
-        f = norm_dot(S, S_b)
+        f = norm_dot_mat(S, S_b)
 
-        nu_0 = - 2 * self.filter_delta.norm_sqr * self.rho[idx] * f
-        nu_1 = 2 * self.filter_delta.norm_sqr * self.rho[idx] * f * ti.sqrt(2) * S.norm()
+        nu_0 = - 2 * self.filter_delta.norm_sqr() * self.rho[idx] * f
+        nu_1 = 2 * self.filter_delta.norm_sqr() * self.rho[idx] * f
         return vec2([nu_0, nu_1])
 
     @ti.func
@@ -371,7 +435,7 @@ class LesBCompute(BCompute):
 
         eta = self.get_eta(idx)
         
-        return self.D * etha[0] * J
+        return self.D * eta[0] * J
 
     @ti.func
     def get_eta(self, idx):

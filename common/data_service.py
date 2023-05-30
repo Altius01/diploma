@@ -2,6 +2,8 @@ import h5py
 import numpy as np
 from pathlib import Path
 
+my_float = np.float32
+
 class DataService:
     rw_energy = True
     _dirs_to_create = ['data/', 'graphs/rho', 'graphs/B', 'graphs/u', 'energy/',]
@@ -24,19 +26,19 @@ class DataService:
 
     def save_data(self, step, args):
         with h5py.File(Path(f"{self.dir_name}/data/step_{step}.hdf5"), "w") as f:
-            dset = f.create_dataset("t", data=np.array([args[0]]), dtype=np.float64)
-            dset = f.create_dataset("rho", data=args[1], dtype=np.float64)
-            dset = f.create_dataset("p", data=args[2], dtype=np.float64)
-            dset = f.create_dataset("u", data=args[3], dtype=np.float64)
-            dset = f.create_dataset("B", data=args[4], dtype=np.float64)
+            dset = f.create_dataset("t", data=np.array([args[0]]), dtype=my_float)
+            dset = f.create_dataset("rho", data=args[1], dtype=my_float)
+            dset = f.create_dataset("p", data=args[2], dtype=my_float)
+            dset = f.create_dataset("u", data=args[3], dtype=my_float)
+            dset = f.create_dataset("B", data=args[4], dtype=my_float)
 
     def save_data_cl(self, step, args):
         with h5py.File(Path(f"{self.dir_name}/data/step_{step}.hdf5"), "w") as f:
-            dset = f.create_dataset("t", data=np.array([args[0]]), dtype=np.float64)
-            dset = f.create_dataset("rho", data=args[1].get(), dtype=np.float64)
-            dset = f.create_dataset("p", data=args[2].get(), dtype=np.float64)
-            dset = f.create_dataset("u", data=args[3].get(), dtype=np.float64)
-            dset = f.create_dataset("B", data=args[4].get(), dtype=np.float64)
+            dset = f.create_dataset("t", data=np.array([args[0]]), dtype=my_float)
+            dset = f.create_dataset("rho", data=args[1].get(), dtype=my_float)
+            dset = f.create_dataset("p", data=args[2].get(), dtype=my_float)
+            dset = f.create_dataset("u", data=args[3].get(), dtype=my_float)
+            dset = f.create_dataset("B", data=args[4].get(), dtype=my_float)
 
     def read_data(self, step): # args):
         with h5py.File(Path(f"{self.dir_name}/data/step_{step}.hdf5"), "r") as f:
@@ -54,14 +56,14 @@ class DataService:
     
         if not Path(path / "e_kin.hdf5").exists() or self.rw_energy:
             with h5py.File(path / "e_kin.hdf5", "w") as f:
-                dset = f.create_dataset("energy", len(args[0]), dtype=np.float64)
+                dset = f.create_dataset("energy", len(args[0]), dtype=my_float)
                 dset[:] = args[0]
-                dset = f.create_dataset("time", len(args[2]), dtype=np.float64)
+                dset = f.create_dataset("time", len(args[2]), dtype=my_float)
                 dset[:] = args[2]
             with h5py.File(path / "e_mag.hdf5", "w") as f:
-                dset = f.create_dataset("energy", len(args[1]), dtype=np.float64)
+                dset = f.create_dataset("energy", len(args[1]), dtype=my_float)
                 dset[:] = args[1]
-                dset = f.create_dataset("time", len(args[2]), dtype=np.float64)
+                dset = f.create_dataset("time", len(args[2]), dtype=my_float)
                 dset[:] = args[2]
         else:
             e_kin = None
@@ -75,9 +77,9 @@ class DataService:
                 time = np.append(time, args[2])
 
             with h5py.File(path / "e_kin.hdf5", "w") as f:
-                dset = f.create_dataset("energy", len(e_kin), dtype=np.float64)
+                dset = f.create_dataset("energy", len(e_kin), dtype=my_float)
                 dset[:] = e_kin
-                dset = f.create_dataset("time", len(time), dtype=np.float64)
+                dset = f.create_dataset("time", len(time), dtype=my_float)
                 dset[:] = time
 
             with h5py.File(path / "e_mag.hdf5", "r") as f:
@@ -85,9 +87,9 @@ class DataService:
                 e_mag = np.append(e_mag, args[1])
 
             with h5py.File(path / "e_mag.hdf5", "w") as f:
-                dset = f.create_dataset("energy", len(e_mag), dtype=np.float64)
+                dset = f.create_dataset("energy", len(e_mag), dtype=my_float)
                 dset[:] = e_mag
-                dset = f.create_dataset("time", len(time), dtype=np.float64)
+                dset = f.create_dataset("time", len(time), dtype=my_float)
                 dset[:] = time
 
     def get_energy(self):
