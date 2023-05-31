@@ -42,21 +42,49 @@ class SystemComputer:
         self.B = B
         self.rho = rho
 
-        self.rho_computer.init_data(rho, u)
-        self.B_computer.init_data(rho, u, B)
-        self.u_computer.init_data(rho, p, u, B)
-
     @ti.func
     def Q_rho(self, idx):
-        return self.rho_rk[idx]
+        return self.rho[idx]
     
     @ti.func
     def Q_u(self, idx):
-        return self.rho_rk[idx]*self.u_rk[idx]
+        return self.rho[idx]*self.u[idx]
     
     @ti.func
     def Q_B(self, idx):
-        return 
+        return self.B[idx]
+
+    @ti.func
+    def V_rho(self, idx):
+        return self.rho[idx]
+    
+    @ti.func
+    def V_u(self, idx):
+        return self.u[idx]
+    
+    @ti.func
+    def V_B(self, idx):
+        return self.B[idx]
+
+    @ti.func
+    def grad_rho(self, idx):
+        return grad_sc(self.V_rho, self.h, idx)
+    
+    @ti.func
+    def grad_U(self, idx):
+        return grad_vec(self.V_u, self.h, idx)
+    
+    @ti.func
+    def grad_B(self, idx):
+        return grad_vec(self.V_B, self.h, idx)
+
+    @ti.func
+    def rot_U(self, idx):
+        return rot_vec(self.V_u, self.h, idx)
+    
+    @ti.func
+    def rot_B(self, idx):
+        return rot_vec(self.V_B, self.h, idx)
 
     @ti.func
     def _check_ghost(self, shape, idx):
@@ -137,7 +165,7 @@ class SystemComputer:
         return ti.max(ti.min(r, 1), 0)
     
     @ti.kernel
-    def muscl_Q_L(self, Q: ti.template(), i, idx):
+    def Q_L(self, Q: ti.template(), i, idx):
         idx_left = idx - get_basis(i)
         idx_right = idx + get_basis(i)
                                     
@@ -149,7 +177,7 @@ class SystemComputer:
         return Q(idx) + 0.5 * self.minmod(r)*D_m
     
     @ti.kernel
-    def muscl_Q_R(self, Q: ti.template(), i, idx):
+    def Q_R(self, Q: ti.template(), i, idx):
         idx_left = idx
         idx_right = idx + 2*get_basis(i)
         idx = idx + get_basis(i)
@@ -164,70 +192,115 @@ class SystemComputer:
     @ti.func
     def flux_mat_right(self, flux_conv: ti.template(), flux_viscos: ti.template(), 
         flux_hall: ti.template(), flux_les: ti.template(), Q: ti.template(), i, idx):
-        # idx_left = idx
-        # idx_right = idx + get_basis(i)
 
         Q_p = self.muscl_Q_R(self, Q, i, idx)
         Q_m = self.muscl_Q_L(self, Q, i, idx)
 
+        Q_rho_p = self.muscl_Q_R(self, self.Q_rho, i, idx)
+        Q_rho_m = self.muscl_Q_L(self, self.Q_rho, i, idx)
+
+        Q_u_p = self.muscl_Q_R(self, self.Q_u, i, idx)
+        Q_u_m = self.muscl_Q_L(self, self.Q_u, i, idx)
+
+        Q_B_p = self.muscl_Q_R(self, self.Q_B, i, idx)
+        Q_B_m = self.muscl_Q_L(self, self.Q_B, i, idx)
+
         s_max = self.get_s_j_max(i, idx)
 
-        result = 0.5*( get_mat_col(flux_conv(idx_left) + flux_conv(idx_right), i)
-            - s_max * (Q(idx_right) - Q(idx_left)) )
+        result = 0.5*( 
+            get_mat_col(flux_conv(Q_rho_p, Q_u_p, Q_B_p) + flux_conv(Q_rho_m, Q_u_m, Q_B_m), i)
+            - s_max * (Q_p - Q_m) )
 
         if ti.static(self.ideal==False):
             for j, k in ti.ndrange(2, 2):
                 corner = idx - vec3i(1) + get_dx_st(i, j, k, left=False)
+                V_rho = V_plus_sc(self.V_rho, corner)
+                V_u = V_plus_vec(self.V_B, corner)
+                V_B = V_plus_vec(self.V_B, corner)
+
                 result -= 0.25*get_mat_col(
-                    flux_viscos(corner)
+                    flux_viscos(V_rho, V_u, V_B, self.grad_U(corner), self.grad_B(corner))
                     , i)
 
         if ti.static(self.hall):
             for j, k in ti.ndrange(2, 2):
                 corner = idx - vec3i(1) + get_dx_st(i, j, k, left=False)
+                V_rho = V_plus_sc(self.V_rho, corner)
+                V_u = V_plus_vec(self.V_B, corner)
+                V_B = V_plus_vec(self.V_B, corner)
+
                 result -= 0.25*get_mat_col(
-                    flux_hall(corner)
+                    flux_hall(V_rho, V_u, V_B, self.grad_B(corner), self.rot_B(corner))
                     , i)
             
         if ti.static(self.les != NonHallLES.DNS):
             for j, k in ti.ndrange(2, 2):
                 corner = idx - vec3i(1) + get_dx_st(i, j, k, left=False)
+                V_rho = V_plus_sc(self.V_rho, corner)
+                V_u = V_plus_vec(self.V_B, corner)
+                V_B = V_plus_vec(self.V_B, corner)
+
                 result -= 0.25*get_mat_col(
-                    flux_les(corner)
+                    flux_les(V_rho, V_u, V_B, self.grad_U(corner), self.grad_B(corner), 
+                        self.rot_U(corner), self.rot_B(corner))
                     , i)
         
         return result
     
     @ti.func
-    def flux_vec_right(self, flux_conv: ti.template(), flux_viscos: ti.template(), 
+    def flux_mat_right(self, flux_conv: ti.template(), flux_viscos: ti.template(), 
         flux_hall: ti.template(), flux_les: ti.template(), Q: ti.template(), i, idx):
-        idx_left = idx
-        idx_right = idx + get_basis(i)
+
+        Q_p = self.muscl_Q_R(self, Q, i, idx)
+        Q_m = self.muscl_Q_L(self, Q, i, idx)
+
+        Q_rho_p = self.muscl_Q_R(self, self.Q_rho, i, idx)
+        Q_rho_m = self.muscl_Q_L(self, self.Q_rho, i, idx)
+
+        Q_u_p = self.muscl_Q_R(self, self.Q_u, i, idx)
+        Q_u_m = self.muscl_Q_L(self, self.Q_u, i, idx)
+
+        Q_B_p = self.muscl_Q_R(self, self.Q_B, i, idx)
+        Q_B_m = self.muscl_Q_L(self, self.Q_B, i, idx)
 
         s_max = self.get_s_j_max(i, idx)
 
-        result = 0.5*( get_vec_col(flux_conv(idx_left) + flux_conv(idx_right), i)
-            - s_max * (Q(idx_right) - Q(idx_left)) )
+        result = 0.5*( 
+            get_vec_col(flux_conv(Q_rho_p, Q_u_p, Q_B_p) + flux_conv(Q_rho_m, Q_u_m, Q_B_m), i)
+            - s_max * (Q_p - Q_m) )
 
         if ti.static(self.ideal==False):
             for j, k in ti.ndrange(2, 2):
                 corner = idx - vec3i(1) + get_dx_st(i, j, k, left=False)
+                V_rho = V_plus_sc(self.V_rho, corner)
+                V_u = V_plus_vec(self.V_B, corner)
+                V_B = V_plus_vec(self.V_B, corner)
+
                 result -= 0.25*get_vec_col(
-                    flux_viscos(corner)
+                    flux_viscos(V_rho, V_u, V_B, self.grad_U(corner), self.grad_B(corner))
                     , i)
 
         if ti.static(self.hall):
             for j, k in ti.ndrange(2, 2):
                 corner = idx - vec3i(1) + get_dx_st(i, j, k, left=False)
+                V_rho = V_plus_sc(self.V_rho, corner)
+                V_u = V_plus_vec(self.V_B, corner)
+                V_B = V_plus_vec(self.V_B, corner)
+
                 result -= 0.25*get_vec_col(
-                    flux_hall(corner)
+                    flux_hall(V_rho, V_u, V_B, self.grad_B(corner), self.rot_B(corner))
                     , i)
             
         if ti.static(self.les != NonHallLES.DNS):
             for j, k in ti.ndrange(2, 2):
                 corner = idx - vec3i(1) + get_dx_st(i, j, k, left=False)
+                V_rho = V_plus_sc(self.V_rho, corner)
+                V_u = V_plus_vec(self.V_B, corner)
+                V_B = V_plus_vec(self.V_B, corner)
+
                 result -= 0.25*get_vec_col(
-                    flux_les(corner)
+                    flux_les(V_rho, V_u, V_B, self.grad_U(corner), self.grad_B(corner), 
+                        self.rot_U(corner), self.rot_B(corner))
                     , i)
         
         return result
@@ -243,10 +316,10 @@ class SystemComputer:
                     idx_l = idx - get_basis(j)
 
                     flux_r = self.flux_vec_right(computer.flux_convective, computer.flux_viscous,
-                    computer.flux_hall, computer.flux_les, computer.Q, j, idx_r)
+                    computer.flux_hall, computer.flux_les, self.Q_rho, j, idx_r)
                     
                     flux_l = self.flux_vec_right(computer.flux_convective, computer.flux_viscous,
-                    computer.flux_hall, computer.flux_les, computer.Q, j, idx_l)
+                    computer.flux_hall, computer.flux_les, self.Q_rho, j, idx_l)
 
                     res -= (flux_r - flux_l) / get_elem_1d(self.h, j)
                 out[idx] = res
@@ -268,10 +341,10 @@ class SystemComputer:
                     idx_l = idx - get_basis(j)
 
                     flux_r = self.flux_mat_right(computer.flux_convective, computer.flux_viscous,
-                        computer.flux_hall, computer.flux_les, computer.Q, j, idx_r)
+                        computer.flux_hall, computer.flux_les, self.Q_u, j, idx_r)
                     
                     flux_l = self.flux_mat_right(computer.flux_convective, computer.flux_viscous,
-                    computer.flux_hall, computer.flux_les, computer.Q, j, idx_l)
+                    computer.flux_hall, computer.flux_les, self.Q_u, j, idx_l)
 
                     res -= (flux_r - flux_l) / get_elem_1d(self.h, j)
                 out[idx] = res
@@ -287,10 +360,10 @@ class SystemComputer:
                     idx_l = idx - get_basis(j)
 
                     flux_r = self.flux_mat_right(computer.flux_convective, computer.flux_viscous,
-                    computer.flux_hall, computer.flux_les, computer.Q, j, idx_r)
+                    computer.flux_hall, computer.flux_les, self.Q_B, j, idx_r)
                     
                     flux_l = self.flux_mat_right(computer.flux_convective, computer.flux_viscous,
-                    computer.flux_hall, computer.flux_les, computer.Q, j, idx_l)
+                    computer.flux_hall, computer.flux_les, self.Q_B, j, idx_l)
 
                     res -= (flux_r - flux_l) / get_elem_1d(self.h, j)
                 out[idx] = res
@@ -333,7 +406,6 @@ class SystemComputer:
         return self.get_field_from_foo(foo, out)
 
 
-
 @ti.data_oriented
 class Compute(ABC):
     def __init__(self, h, filter_size=vec3i(1), les=NonHallLES.DNS):
@@ -342,69 +414,43 @@ class Compute(ABC):
         self.filter_delta = self.h * self.filter_size
         self.les = les
 
-    # @abstractmethod
-    # def init_data(self, *args, **kwargs):
-    #     ...
-
-    # @ti.func
-    # @abstractmethod
-    # def Q(self, idx):
-    #     ...
-
-    # @ti.func
-    # @abstractmethod
-    # def V(self, idx):
-    #     ...
-
     @ti.func
     @abstractmethod
-    def flux_convective(self, Q_rho, Q_u, Q_B, idx):
+    def flux_convective(self, Q_rho, Q_u, Q_B):
         ...
 
     @ti.func
     @abstractmethod
-    def flux_viscous(self, V_rho, V_u, V_B, idx):
+    def flux_viscous(self, V_rho, V_u, V_B, grad_U, grad_B):
         ...
 
     @ti.func
     @abstractmethod
-    def flux_hall(self, V_rho, V_u, V_B, idx):
+    def flux_hall(self, V_rho, V_u, V_B, grad_B, rot_B):
         ...
 
     @ti.func
     @abstractmethod
-    def flux_les(self, V_rho, V_u, V_B, idx):
+    def flux_les(self, V_rho, V_u, V_B, grad_U, grad_B, rot_U, rot_B):
         ...
 
 
 @ti.data_oriented
 class RhoCompute(Compute):
-    # def init_data(self, rho, u):
-    #     self.u = u
-    #     self.rho = rho
-
-    # @ti.func
-    # def Q(self, idx):
-    #     return self.rho[idx]
-
-    # @ti.func
-    # def V(self, idx):
-    #     return self.rho[idx]
+    @ti.func
+    def flux_convective(self, Q_rho, Q_u, Q_B):
+        return Q_u
 
     @ti.func
-    def flux_convective(self, Q_rho, Q_u, Q_B, idx):
-        return self.rho[idx]*self.u[idx]
-
-    @ti.func
-    def flux_viscous(self, V_rho, V_u, V_B, idx):
+    def flux_viscous(self, V_rho, V_u, V_B, grad_U, grad_B):
         return vec3(0)
 
     @ti.func
-    def flux_hall(self, V_rho, V_u, V_B, idx):
+    def flux_viscous(self, V_rho, V_u, V_B, grad_B, rot_B):
         return vec3(0)
 
     @ti.func
-    def flux_les(self, V_rho, V_u, V_B, idx):
+    def flux_les(self, V_rho, V_u, V_B, grad_U, grad_B, rot_U, rot_B):
         return vec3(0)
 
 
@@ -416,79 +462,32 @@ class MomentumCompute(Compute):
         self.Ma = Ma
         self.gamma = gamma
 
-    # def init_data(self, rho, p, u, B, C=0, Y=0):
-    #     self.u = u
-    #     self.p = p
-    #     self.B = B
-    #     self.rho = rho
-
-    #     self.C = C
-    #     self.Y = Y
-
-    # @ti.func
-    # def Q(self, idx):
-    #     return self.rho[idx]*self.u[idx]
-
-    # @ti.func
-    # def V(self, idx):
-    #     return self.u[idx]
-
     @ti.func
-    def flux_convective(self, Q_rho, Q_u, Q_B, idx):
-        B = Q_B(idx)
-        rho = Q_rho(idx)
-        rhoU = Q_u(idx)
-
-        p = ti.pow(rho, self.gamma)
-        BB = B.outer_product(B)
-        rho_UU = rhoU.outer_product(rhoU) / rho
+    def flux_convective(self, Q_rho, Q_u, Q_B):
+        p = ti.pow(Q_rho, self.gamma)
+        BB = Q_B.outer_product(Q_B)
+        rho_UU = Q_u.outer_product(Q_u) / Q_rho
         return (
             rho_UU
-            + (p + (0.5/self.Ma**2) * B.norm_sqr()) * kron
+            + (p + (0.5/self.Ma**2) * Q_B.norm_sqr()) * kron
             - BB
         )
 
     @ti.func
-    def flux_viscous(self, V_rho, V_u, V_B, idx):
-        gradU = grad_vec(V_u, self.h, idx)
-        divU = gradU.trace()
+    def flux_viscous(self, V_rho, V_u, V_B, grad_U, grad_B):
+        divU = grad_U.trace()
 
         return (
-            gradU + gradU.transpose() + (2.0/3.0) * divU * kron
+            grad_U + grad_U.transpose() + (2.0/3.0) * divU * kron
         ) / self.Re
 
     @ti.func
-    def flux_hall(self, V_rho, V_u, V_B, idx):
+    def flux_viscous(self, V_rho, V_u, V_B, grad_B, rot_B):
         return mat3x3(0)
 
     @ti.func
-    def flux_les(self, V_rho, V_u, V_B, idx):
+    def flux_les(self, V_rho, V_u, V_B, grad_U, grad_B, rot_U, rot_B):
         return mat3x3(0)
-
-    # @ti.func
-    # def rho_uu(self, idx):
-    #     u = self.u[idx]
-    #     return self.rho[idx] * u.outer_product(u)
-
-    # @ti.func
-    # def BB(self, idx):
-    #     B = self.B[idx]
-    #     return B.outer_product(B)
-
-    @ti.func
-    def get_S(self, V_rho, V_u, V_B, idx):
-        gradU = grad_vec(V_u, self.h, idx)
-        return 0.5*(gradU + gradU.transpose())
-
-    @ti.func
-    def get_S_abs(self, V_rho, V_u, V_B, idx):
-        S = self.get_S(V_rho, V_u, V_B, idx)
-        return ti.sqrt(2)*S.norm()
-    
-    @ti.func
-    def get_S_abs_sqr(self, V_rho, V_u, V_B, idx):
-        S = self.get_S(V_rho, V_u, V_B, idx)
-        return 2*S.norm_sqr()
 
 
 @ti.data_oriented
@@ -498,65 +497,26 @@ class BCompute(Compute):
         self.Rem = Rem
         self.delta_hall = delta_hall
 
-    # def init_data(self, rho, u, B, D=0):
-    #     self.rho = rho
-    #     self.u = u
-    #     self.B = B
-    #     self.D = D
-
-    # @ti.func
-    # def Q(self, idx):
-    #     return self.B[idx]
-
-    # @ti.func
-    # def V(self, idx):
-    #     return self.B[idx]
-
     @ti.func
-    def flux_convective(self, Q_rho, Q_u, Q_B, idx):
-        Bu = Q_B.outer_product(Q_u(idx)) / Q_rho(idx) 
+    def flux_convective(self, Q_rho, Q_u, Q_B):
+        Bu = Q_B.outer_product(Q_u) / Q_rho
         return Bu - Bu.transpose()
 
     @ti.func
-    def flux_viscous(self, V_rho, V_u, V_B, idx):
-        gradB = grad_vec(V_B, self.h, idx)
+    def flux_viscous(self, V_rho, V_u, V_B, grad_U, grad_B):
         return (
-            gradB - gradB.transpose()
+            grad_B - grad_B.transpose()
         ) / self.Rem
 
     @ti.func
-    def flux_hall(self, V_rho, V_u, V_B, idx):
-        j = rot_vec(V_B, self.h, idx)
-        v_h = - self.delta_hall * j / V_plus_sc(V_rho, idx)
-        v_hB = v_h.outer_product(V_plus_vec(V_B, idx))  
+    def flux_viscous(self, V_rho, V_u, V_B, grad_B, rot_B):
+        j = rot_B
+        v_h = - self.delta_hall * j / V_rho
+        v_hB = v_h.outer_product(V_B)  
         return (
             v_hB - v_hB.transpose()
         )
 
     @ti.func
-    def flux_les(self, V_rho, V_u, V_B, idx):
+    def flux_les(self, V_rho, V_u, V_B, grad_U, grad_B, rot_U, rot_B):
         return mat3x3(0)
-
-    # @ti.func
-    # def Bu(self, idx):
-    #     u = self.u[idx]
-    #     B = self.B[idx]
-    #     return B.outer_product(u)
-
-    # @ti.func
-    # def get_rho(self, idx):
-    #     return self.rho[idx]
-
-    # @ti.func
-    # def get_u(self, idx):
-    #     return self.u[idx]
-
-    @ti.func
-    def get_J(self, V_rho, V_u, V_B, idx):
-        gradB = grad_vec(V_B, self.h, idx)
-        return 0.5*(gradB - gradB.transpose())
-
-    @ti.func
-    def get_J_abs(self, V_rho, V_u, V_B, idx):
-        J = self.get_J(V_rho, V_u, V_B, idx)
-        return J.norm()
