@@ -349,88 +349,91 @@ class LesComputer(SystemComputer):
 @ti.data_oriented
 class LesMomentumCompute(MomentumCompute):
     @ti.func
-    def flux_les(self, idx):
-        gradU = grad_vec(self.V, self.h, idx)
+    def flux_les(self, V_rho, V_u, V_B, idx):
+        gradU = grad_vec(V_u, self.h, idx)
         S = 0.5*(gradU + gradU.transpose())
 
         nu = self.get_nu(idx)
-        return self.C * nu[0] * (S - (1.0/3.0) * S.trace() * kron) + (1.0/3.0) * self.Y * nu[1] * self.get_S_abs(idx) * kron
+        return (
+            self.C * nu[0] * (S - (1.0/3.0) * S.trace() * kron) 
+            + (1.0/3.0) * self.Y * nu[1] * self.get_S_abs(V_rho, V_u, V_B, idx) * kron
+        )
 
     @ti.func
-    def get_nu(self, idx):
+    def get_nu(self, V_rho, V_u, V_B, idx):
         if ti.static(self.les == NonHallLES.SMAG):
-            return self.nu_t_smag(idx)
+            return self.nu_t_smag(V_rho, V_u, V_B, idx)
         elif ti.static(self.les == NonHallLES.CROSS_HELICITY):
-            return self.nu_t_crosshelicity(idx)
+            return self.nu_t_crosshelicity(V_rho, V_u, V_B, idx)
         else:
-            return self.nu_t_dns(idx)
+            return self.nu_t_dns(V_rho, V_u, V_B, idx)
 
     @ti.func
-    def nu_t_dns(self, idx):
+    def nu_t_dns(self, V_rho, V_u, V_B, idx):
         return vec2(1e-6)
 
     @ti.func
-    def nu_t_smag(self, idx):
-        gradU = grad_vec(self.V, self.h, idx)
+    def nu_t_smag(self, V_rho, V_u, V_B, idx):
+        gradU = grad_vec(V_u, self.h, idx)
 
-        nu_0 = - 2 * self.filter_delta.norm_sqr() * self.rho[idx] * self.get_S_abs(idx)
-        nu_1 = 2 * self.filter_delta.norm_sqr() * self.rho[idx] * self.get_S_abs(idx)
+        nu_0 = - 2 * self.filter_delta.norm_sqr() * V_rho(idx) * self.get_S_abs(idx)
+        nu_1 = 2 * self.filter_delta.norm_sqr() * V_rho(idx) * self.get_S_abs(idx)
         return vec2([nu_0, nu_1])
 
     @ti.func
-    def nu_t_crosshelicity(self, idx):
-        gradU = grad_vec(self.V, self.h, idx)
-        gradB = grad_vec(self.get_B, self.h, idx)
+    def nu_t_crosshelicity(self, V_rho, V_u, V_B, idx):
+        gradU = grad_vec(V_u, self.h, idx)
+        gradB = grad_vec(V_B, self.h, idx)
 
         S = 0.5*(gradU + gradU.transpose())
         S_b = 0.5*(gradB + gradB.transpose())
 
         f = norm_dot_mat(S, S_b)
 
-        nu_0 = - 2 * self.filter_delta.norm_sqr() * self.rho[idx] * f
-        nu_1 = 2 * self.filter_delta.norm_sqr() * self.rho[idx] * f
+        nu_0 = - 2 * self.filter_delta.norm_sqr() * V_rho(idx) * f
+        nu_1 = 2 * self.filter_delta.norm_sqr() * V_rho(idx) * f
         return vec2([nu_0, nu_1])
 
-    @ti.func
-    def get_B(self, idx):
-        return self.B[idx]
+    # @ti.func
+    # def get_B(self, idx):
+    #     return self.B[idx]
 
     @ti.func
-    def get_alpha(self, idx):
-        return self.get_nu(idx)[0]
+    def get_alpha(self, V_rho, V_u, V_B, idx):
+        return self.get_nu(V_rho, V_u, V_B, idx)[0]
 
     @ti.func
-    def get_tr_alpha(self, idx):
-        return self.get_nu(idx)[1]
+    def get_tr_alpha(self, V_rho, V_u, V_B, idx):
+        return self.get_nu(V_rho, V_u, V_B, idx)[1]
     
     @ti.func
-    def get_Mu_a(self, idx):
-        S = self.get_S(idx)
-        alpha = self.get_nu(idx)
+    def get_Mu_a(self, V_rho, V_u, V_B, idx):
+        S = self.get_S(V_rho, V_u, V_B, idx)
+        alpha = self.get_nu(V_rho, V_u, V_B, idx)
 
         return alpha[0] * (S - (1.0/3.0) * S.trace()*kron)
 
     @ti.func
-    def get_tr_Mu_a(self, idx):
-        alpha = self.get_nu(idx)
+    def get_tr_Mu_a(self, V_rho, V_u, V_B, idx):
+        alpha = self.get_nu(V_rho, V_u, V_B, idx)
 
-        return alpha[1] * self.get_S_abs(idx)
-
-    @ti.func
-    def Lu_a(self, idx):
-        rhoU = self.Q(idx)
-        return rhoU.outer_product(rhoU) / self.rho[idx]
+        return alpha[1] * self.get_S_abs(V_rho, V_u, V_B, idx)
 
     @ti.func
-    def Lu_b(self, idx):
-        B = self.B[idx]
+    def Lu_a(self, V_rho, V_u, V_B, idx):
+        U = V_u(idx)
+        return V_rho(idx) * U.outer_product(U)
+
+    @ti.func
+    def Lu_b(self, V_rho, V_u, V_B, idx):
+        B = V_B(idx)
         return B.outer_product(B)
 
 @ti.data_oriented
 class LesBCompute(BCompute):
     @ti.func
-    def flux_les(self, idx):
-        gradB = grad_vec(self.V, self.h, idx)
+    def flux_les(self, V_rho, V_u, V_B, idx):
+        gradB = grad_vec(V_B, self.h, idx)
         J = 0.5*(gradB - gradB.transpose())
 
         eta = self.get_eta(idx)
@@ -438,7 +441,7 @@ class LesBCompute(BCompute):
         return self.D * eta[0] * J
 
     @ti.func
-    def get_eta(self, idx):
+    def get_eta(self, V_rho, V_u, V_B, idx):
         if ti.static(self.les == NonHallLES.SMAG):
             return self.eta_t_smag(idx)
         elif ti.static(self.les == NonHallLES.CROSS_HELICITY):
@@ -447,20 +450,20 @@ class LesBCompute(BCompute):
             return self.eta_t_dns(idx)
 
     @ti.func
-    def eta_t_dns(self, idx):
+    def eta_t_dns(self, V_rho, V_u, V_B, idx):
         return vec1(1e-6)
 
     @ti.func
-    def eta_t_smag(self, idx):
-        j = rot_vec(self.V, self.h, idx)
+    def eta_t_smag(self, V_rho, V_u, V_B, idx):
+        j = rot_vec(V_B, self.h, idx)
 
         eta_0 = - 2.0 * self.filter_delta.norm_sqr() * j.norm()
         return vec1(eta_0)
 
     @ti.func
-    def eta_t_crosshelicity(self, idx):
-        j = rot_vec(self.V, self.h, idx)
-        w = rot_vec(self.get_u, self.h, idx)
+    def eta_t_crosshelicity(self, V_rho, V_u, V_B, idx):
+        j = rot_vec(V_B, self.h, idx)
+        w = rot_vec(V_u, self.h, idx)
 
         jw = j.dot(w)
 
@@ -468,20 +471,20 @@ class LesBCompute(BCompute):
         return vec1(eta_0)
 
     @ti.func
-    def get_phi(self, idx):
-        return self.get_eta(idx)[0]
+    def get_phi(self, V_rho, V_u, V_B, idx):
+        return self.get_eta(V_rho, V_u, V_B, idx)[0]
 
     @ti.func
-    def get_mB_a(self, idx):
-        J = self.get_J(idx)
-        phi = self.get_eta(idx)
+    def get_mB_a(self, V_rho, V_u, V_B, idx):
+        J = self.get_J(V_rho, V_u, V_B, idx)
+        phi = self.get_eta(V_rho, V_u, V_B, idx)
 
         return phi[0] * J
 
     @ti.func
-    def rhoU(self, idx):
-        return self.rho[idx] * self.u[idx]
+    def rhoU(self, V_rho, V_u, V_B, idx):
+        return V_rho(idx) * V_u(idx)
 
     @ti.func
-    def Lb_a(self, idx):
-        return self.rhoU(idx).outer_product(self.B[idx]) / self.rho[idx]
+    def Lb_a(self, V_rho, V_u, V_B, idx):
+        return V_u(idx).outer_product(V_B(idx))
