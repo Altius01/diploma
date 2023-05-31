@@ -15,7 +15,7 @@ class LesComputer(SystemComputer):
         self.C = 0
         self.Y = 0
 
-        self.u_computer = LesMomentumCompute(Re, Ma, self.h, les=les)
+        self.u_computer = LesMomentumCompute(Re, Ma, gamma, self.h, les=les)
         self.B_computer = LesBCompute(Rem, delta_hall, self.h, les=les)
 
         self.init_les_arrays()
@@ -184,7 +184,7 @@ class LesComputer(SystemComputer):
         return self.rho[idx]*self.Su[idx]
 
     @ti.func
-    def get_Mu_a(self, idx):
+    def get_Mu_a_arr(self, idx):
         return self.rho[idx]*self.Mu_a[idx]
 
     @ti.func
@@ -192,15 +192,15 @@ class LesComputer(SystemComputer):
         return self.alpha_ij[idx]
     
     @ti.func
-    def get_phi(self, idx):
+    def get_phi_arr(self, idx):
         return self.phi[idx]
 
     @ti.func
-    def get_mB_a(self, idx):
+    def get_mB_a_arr(self, idx):
         return self.mB_a[idx]
 
     @ti.func
-    def get_J(self, idx):
+    def get_J_arr(self, idx):
         return self.J[idx]
 
     @ti.func
@@ -235,7 +235,7 @@ class LesComputer(SystemComputer):
     @ti.func
     def get_Mu_a(self, idx):
         S = self.get_S(idx)
-        return self.get_alpha(idx)*(S - (1.0/3.0)*S.trace()*kron)
+        return self.rho[idx] * self.get_alpha(idx)*(S - (1.0/3.0)*S.trace()*kron)
 
     @ti.func
     def get_alpha(self, idx):
@@ -285,7 +285,7 @@ class LesComputer(SystemComputer):
         
         self.Lu = self.create_filtered_mat(filter_size)
 
-        self.Lb_a = self.create_filtered_mat(filter_size)
+        self.Lb_a_hat = self.create_filtered_mat(filter_size)
         self.LB = self.create_filtered_mat(filter_size)
 
         self.Su = ti.Matrix.field(n=3, m=3, dtype=double, shape=self.shape)
@@ -341,14 +341,14 @@ class LesComputer(SystemComputer):
     
         self.get_Lu(self.Lu, self.Lu_a_hat, self.Lu_b_hat, self.rho_hat, self.rhoU_hat, self.B_hat)
         
-        self.filter_mat(self.Lb_a, filter_size=filter_size, out=self.Lb_a)
-        self.get_Lb(self.LB, self.Lb_a, self.rho_hat, self.rhoU_hat, self.B_hat)
+        self.filter_mat(self.Lb_a, filter_size=filter_size, out=self.Lb_a_hat)
+        self.get_Lb(self.LB, self.Lb_a_hat, self.rho_hat, self.rhoU_hat, self.B_hat)
 
         self.get_mat_field_from_foo(self.get_S, out=self.Su)
         self.get_mat_field_from_foo(self.get_Mu_a, out=self.Mu_a)
         self.get_sc_field_from_foo(self.get_alpha, out=self.alpha_ij)
         
-        self.filter_favre_mat(self.get_Mu_a, self.rho_hat, filter_size=filter_size, out=self.Mu_a_hat)
+        self.filter_favre_mat(self.get_Mu_a_arr, self.rho_hat, filter_size=filter_size, out=self.Mu_a_hat)
         self.filter_favre_mat(self.get_Su, self.rho_hat, filter_size=filter_size, out=self.Su_hat)
         self.filter_sc(self.get_alpha_ij, filter_size=filter_size, out=self.alpha_ij_hat)
         
@@ -358,9 +358,9 @@ class LesComputer(SystemComputer):
         self.get_mat_field_from_foo(self.get_mB_a, out=self.mB_a)
         self.get_sc_field_from_foo(self.get_phi, out=self.phi)
 
-        self.filter_sc(self.get_phi, filter_size=filter_size, out=self.phi_hat)
-        self.filter_mat(self.get_mB_a, filter_size=filter_size, out=self.mB_a_hat)
-        self.filter_mat(self.get_J, filter_size=filter_size, out=self.J_hat)
+        self.filter_sc(self.get_phi_arr, filter_size=filter_size, out=self.phi_hat)
+        self.filter_mat(self.get_mB_a_arr, filter_size=filter_size, out=self.mB_a_hat)
+        self.filter_mat(self.get_J_arr, filter_size=filter_size, out=self.J_hat)
 
         self.get_mB(self.mB, self.mB_a_hat, self.phi_hat, self.J_hat)
 
@@ -405,7 +405,7 @@ class LesComputer(SystemComputer):
 
 @ti.data_oriented
 class LesMomentumCompute(MomentumCompute):
-    def init_data(C, Y):
+    def init_data(self, C, Y):
         self.C = C
         self.Y = Y
 
@@ -413,7 +413,7 @@ class LesMomentumCompute(MomentumCompute):
     def flux_les(self, V_rho, V_u, V_B, grad_U, grad_B, rot_U, rot_B):
         S = 0.5*(grad_U + grad_U.transpose())
         S_abs = ti.sqrt(2)*S.norm()
-        nu = self.get_nu(idx)
+        nu = self.get_nu(V_rho, V_u, V_B, grad_U, grad_B, rot_U, rot_B)
         return (
             self.C * nu[0] * (S - (1.0/3.0) * grad_U.trace() * kron) 
             + (1.0/3.0) * self.Y * nu[1] * S_abs * kron
@@ -437,8 +437,8 @@ class LesMomentumCompute(MomentumCompute):
         S = 0.5*(grad_U + grad_U.transpose())
         S_abs = ti.sqrt(2)*S.norm()
 
-        nu_0 = - 2 * self.filter_delta.norm_sqr() * V_rho(idx) * S
-        nu_1 = 2 * self.filter_delta.norm_sqr() * V_rho(idx) * S
+        nu_0 = - 2 * self.filter_delta.norm_sqr() * V_rho * S_abs
+        nu_1 = 2 * self.filter_delta.norm_sqr() * V_rho * S_abs
         return vec2([nu_0, nu_1])
 
     @ti.func
@@ -448,8 +448,8 @@ class LesMomentumCompute(MomentumCompute):
 
         f = norm_dot_mat(S, S_b)
 
-        nu_0 = - 2 * self.filter_delta.norm_sqr() * V_rho(idx) * f
-        nu_1 = 2 * self.filter_delta.norm_sqr() * V_rho(idx) * f
+        nu_0 = - 2 * self.filter_delta.norm_sqr() * V_rho * f
+        nu_1 = 2 * self.filter_delta.norm_sqr() * V_rho * f
         return vec2([nu_0, nu_1])
 
     @ti.func
@@ -463,13 +463,13 @@ class LesMomentumCompute(MomentumCompute):
 
 @ti.data_oriented
 class LesBCompute(BCompute):
-    def init_data(D):
+    def init_data(self, D):
         self.D = D
 
     @ti.func
     def flux_les(self, V_rho, V_u, V_B, grad_U, grad_B, rot_U, rot_B):
         J = 0.5*(grad_B - grad_B.transpose())
-        eta = self.get_eta(idx)
+        eta = self.get_eta(V_rho, V_u, V_B, grad_U, grad_B, rot_U, rot_B)
         
         return self.D * eta[0] * J
 

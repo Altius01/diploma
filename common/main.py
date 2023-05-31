@@ -160,10 +160,10 @@ def main():
     # dns_256_postprocess.compute_energy_only()
     # dns_64_solver.solve()
     # dns_64_postprocess.compute_energy_only()
-    # smag_64_solver.solve()
-    # smag_64_postprocess.compute_energy_only()
-    # cross_64_solver.solve()
-    # cross_64_postprocess.compute_energy_only()
+    smag_64_solver.solve()
+    smag_64_postprocess.compute_energy_only()
+    cross_64_solver.solve()
+    cross_64_postprocess.compute_energy_only()
 
     postprocesses = [
          dns_256_postprocess, 
