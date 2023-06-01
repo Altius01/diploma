@@ -130,25 +130,31 @@ def main():
     # print(DNS_256_CONFIG_PATH)
 
     dns_256_config = Config(file_path=DNS_256_CONFIG_PATH)
+    dns_128_config = Config(file_path=DNS_128_CONFIG_PATH)
     dns_64_config = Config(file_path=DNS_64_CONFIG_PATH)
     smag_64_config = Config(file_path=SMAG_64_CONFIG_PATH)
     cross_64_config = Config(file_path=CROSS_64_CONFIG_PATH)
 
-    dns_256_solver = TiSolver(config=dns_256_config, 
-                               data_path=DNS_256_DATA_PATH, 
+    # dns_256_solver = TiSolver(config=dns_256_config, 
+    #                            data_path=DNS_256_DATA_PATH, 
+    #                              arch=arch)
+    dns_128_solver = TiSolver(config=dns_128_config, 
+                               data_path=DNS_128_DATA_PATH, 
                                  arch=arch)
     dns_64_solver = TiSolver(config=dns_64_config, 
                                 data_path=DNS_64_DATA_PATH, 
                                 arch=arch)
-    smag_64_solver = TiSolver(config=smag_64_config, 
-                                data_path=SMAG_64_DATA_PATH, 
-                                arch=arch)
-    cross_64_solver = TiSolver(config=cross_64_config, 
-                                data_path=CROSS_64_DATA_PATH, 
-                                arch=arch)
+    # smag_64_solver = TiSolver(config=smag_64_config, 
+    #                             data_path=SMAG_64_DATA_PATH, 
+    #                             arch=arch)
+    # cross_64_solver = TiSolver(config=cross_64_config, 
+    #                             data_path=CROSS_64_DATA_PATH, 
+    #                             arch=arch)
     
-    dns_256_postprocess = TiDataProcessor(config=dns_256_config, 
-                                            data_path=DNS_256_DATA_PATH)
+    # dns_256_postprocess = TiDataProcessor(config=dns_256_config, 
+    #                                         data_path=DNS_256_DATA_PATH)
+    dns_128_postprocess = TiDataProcessor(config=dns_128_config, 
+                                            data_path=DNS_128_DATA_PATH)
     dns_64_postprocess = TiDataProcessor(config=dns_64_config, 
                                             data_path=DNS_64_DATA_PATH)
     smag_64_postprocess = TiDataProcessor(config=smag_64_config, 
@@ -156,19 +162,20 @@ def main():
     cross_64_postprocess = TiDataProcessor(config=cross_64_config, 
                                             data_path=CROSS_64_DATA_PATH)
 
-    # dns_256_solver.solve()
-    # dns_256_postprocess.compute_energy_only()
+    dns_128_solver.solve()
+    dns_128_postprocess.compute_energy_only()
     # dns_64_solver.solve()
-    # dns_64_postprocess.compute_energy_only()
-    smag_64_solver.solve()
-    smag_64_postprocess.compute_energy_only()
-    cross_64_solver.solve()
-    cross_64_postprocess.compute_energy_only()
+    dns_64_postprocess.compute_energy_only()
+    # smag_64_solver.solve()
+    # smag_64_postprocess.compute_energy_only()
+    # cross_64_solver.solve()
+    # cross_64_postprocess.compute_energy_only()
 
     postprocesses = [
-         dns_256_postprocess, 
+         dns_128_postprocess, 
          dns_64_postprocess,
-         smag_64_postprocess, cross_64_postprocess,
+         smag_64_postprocess, 
+         cross_64_postprocess,
      ]
 
     plot_energies(postprocesses)

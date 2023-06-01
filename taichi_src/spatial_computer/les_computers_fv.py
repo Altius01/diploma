@@ -333,8 +333,8 @@ class LesComputer(SystemComputer):
         filter_size = self.les_consts_filter_size
         
         self.filter_sc(self.Q_rho, filter_size=filter_size, out=self.rho_hat)
-        self.filter_vec(self.Q_rho, filter_size=filter_size, out=self.rhoU_hat)
-        self.filter_vec(self.Q_rho, filter_size=filter_size, out=self.B_hat)
+        self.filter_vec(self.Q_u, filter_size=filter_size, out=self.rhoU_hat)
+        self.filter_vec(self.Q_B, filter_size=filter_size, out=self.B_hat)
 
         self.filter_mat(self.Lu_a, filter_size=filter_size, out=self.Lu_a_hat)
         self.filter_mat(self.Lu_b, filter_size=filter_size, out=self.Lu_b_hat)
