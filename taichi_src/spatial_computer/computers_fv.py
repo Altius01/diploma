@@ -134,13 +134,13 @@ class SystemComputer:
         ])
 
     @ti.func
-    def get_c_fast(self, Q_rho, Q_u, Q_B, i):
+    def get_c_fast(self, Q_rho, Q_u, Q_B, j):
         pi_rho = ti.sqrt(4 * ti.math.pi * Q_rho)
 
         b = (1 / self.Ma) * Q_B.norm() / pi_rho
         b_x = (1 / self.Ma) * Q_B[j] / pi_rho
         # Sound speed
-        c = (1 / self.Ms) * ti.sqrt(self.gamma * p / rho)
+        c = (1 / self.Ms) * ti.sqrt(self.gamma * ti.pow(Q_rho, self.gamma) / Q_rho)
         # Alfen speed
         c_a = (1 / self.Ma) * Q_B[j] / pi_rho
 
@@ -267,8 +267,8 @@ class SystemComputer:
         sq_rho_R_star = ti.sqrt(rho_R_star)
         signBx = ti.math.sign(Bx_L)
 
-        S_L_star = S_m - ti.abs(Bx)/sq_rho_L_star
-        S_R_star = S_m - ti.abs(Bx)/sq_rho_R_star
+        S_L_star = S_m - ti.abs(Bx_L)/sq_rho_L_star
+        S_R_star = S_m - ti.abs(Bx_R)/sq_rho_R_star
 
         v_star_star = (
             sq_rho_L_star * v_L_star + sq_rho_R_star * v_R_star + (By_R_star - By_L_star)*signBx
@@ -344,7 +344,7 @@ class SystemComputer:
             result[:, 2] = (get_mat_col(flux_B(Q_rho_L, Q_u_L, Q_B_L), i)
                 + S_L*(Q_B_L_star - Q_B_L)
             )
-        elif S_L_star <= 0 and S_M >= 0:
+        elif S_L_star <= 0 and S_m >= 0:
             result[0, 0] = (get_vec_col(flux_rho(Q_rho_L, Q_u_L, Q_B_L), i)
                 + S_L_star*rho_L_star - (S_L_star-S_L)*rho_L_star
                 - Q_rho_L*S_L
@@ -358,7 +358,7 @@ class SystemComputer:
                 + S_L_star*Q_B_star_star - (S_L_star-S_L)*Q_B_L_star
                 - Q_B_L*S_L
             )
-        elif S_M <= 0 and S_R_star >= 0:
+        elif S_m <= 0 and S_R_star >= 0:
             result[0, 0] = (get_vec_col(flux_rho(Q_rho_R, Q_u_R, Q_B_R), i)
                 + S_R_star*rho_R_star - (S_R_star-S_R)*rho_R_star
                 - Q_rho_R*S_R
@@ -393,7 +393,6 @@ class SystemComputer:
         
     @ti.kernel
     def computeHLLD(self, out_rho: ti.template(), out_u: ti.template(), out_B: ti.template()):
-        computer = self.rho_computer
         for idx in ti.grouped(self.rho):
             if not self.check_ghost_idx(idx):
                 res = mat3x3(0)
@@ -401,11 +400,9 @@ class SystemComputer:
                     idx_r = idx
                     idx_l = idx - get_basis(j)
 
-                    flux_r = self.flux_HLLD_right(computer.flux_convective, computer.flux_viscous,
-                    computer.flux_hall, computer.flux_les, self.Q_rho, j, idx_r)
+                    flux_r = self.flux_HLLD_right(j, idx_r)
                     
-                    flux_l = self.flux_HLLD_right(computer.flux_convective, computer.flux_viscous,
-                    computer.flux_hall, computer.flux_les, self.Q_rho, j, idx_l)
+                    flux_l = self.flux_HLLD_right(j, idx_l)
 
                     res -= (flux_r - flux_l) / get_elem_1d(self.h, j)
 
@@ -443,11 +440,11 @@ class SystemComputer:
                     gradB = self.grad_B(corner)
 
                     result[:, 1] -= 0.25*get_mat_col(
-                        self.u_computer.flux_viscos(V_rho, V_u, V_B, gradU, gradB)
+                        self.u_computer.flux_viscous(V_rho, V_u, V_B, gradU, gradB)
                         , i)
                     
                     result[:, 2] -= 0.25*get_mat_col(
-                        self.B_computer.flux_viscos(V_rho, V_u, V_B, gradU, gradB)
+                        self.B_computer.flux_viscous(V_rho, V_u, V_B, gradU, gradB)
                         , i)
 
                 if ti.static(self.hall):

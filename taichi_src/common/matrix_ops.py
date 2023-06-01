@@ -123,7 +123,7 @@ def get_basis(j: int):
     return result
 
 @ti.func
-def get_idx_to_basis(i: int):
+def get_idx_to_basis(j: int):
     result = vec2i(0)
     if j == 0:
         result[0] = 1

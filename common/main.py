@@ -163,12 +163,12 @@ def main():
     #                             data_path=DNS_16_DATA_PATH, 
     #                             arch=arch)
     
-    smag_64_solver = TiSolver(config=smag_64_config, 
-                                data_path=SMAG_64_DATA_PATH, 
-                                arch=arch)
-    cross_64_solver = TiSolver(config=cross_64_config, 
-                                data_path=CROSS_64_DATA_PATH, 
-                                arch=arch)
+    # smag_64_solver = TiSolver(config=smag_64_config, 
+    #                             data_path=SMAG_64_DATA_PATH, 
+    #                             arch=arch)
+    # cross_64_solver = TiSolver(config=cross_64_config, 
+    #                             data_path=CROSS_64_DATA_PATH, 
+    #                             arch=arch)
     
     # dns_256_postprocess = TiDataProcessor(config=dns_256_config, 
     #                                         data_path=DNS_256_DATA_PATH)
