@@ -17,6 +17,7 @@ vec2i = ti.types.vector(n=2, dtype=int)
 vec3i = ti.types.vector(n=3, dtype=int)
 
 mat3x3i = ti.types.matrix(n=3, m=3, dtype=int)
+mat3x2i = ti.types.matrix(3, 2, int)
 mat5x2i = ti.types.matrix(5, 2, int)
 mat5x3i = ti.types.matrix(5, 3, int)
 

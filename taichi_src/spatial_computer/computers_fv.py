@@ -6,7 +6,7 @@ from taichi_src.common.boundaries import *
 from taichi_src.common.matrix_ops import *
 from taichi_src.common.pointers import *
 from taichi_src.spatial_diff.diff_fv import *
-
+import taichi_src.spatial_diff.diff as diff_fd
 @ti.data_oriented
 class SystemComputer:
     def __init__(self, gamma, Re, Ms, Ma, Rem, delta_hall, 
@@ -185,24 +185,26 @@ class SystemComputer:
     
     @ti.func
     def Q_L(self, Q: ti.template(), i, idx):
-        idx_left = idx - get_basis(i)
-        idx_right = idx + get_basis(i)
+        # idx_left = idx - get_basis(i)
+        # idx_right = idx + get_basis(i)
                                     
-        D_m = Q(idx) - Q(idx_left)
-        D_p = Q(idx_right) - Q(idx)
+        # D_m = Q(idx) - Q(idx_left)
+        # D_p = Q(idx_right) - Q(idx)
 
-        return Q(idx) + 0.25 * ( (1-self.k)*self.minmod(D_p / D_m)*D_m + (1+self.k)*self.minmod(D_m / D_p)*D_p)
+        # return Q(idx) + 0.25 * ( (1-self.k)*self.minmod(D_p / D_m)*D_m + (1+self.k)*self.minmod(D_m / D_p)*D_p)
+        return diff_fd.get_weno(Q, i, idx)
     
     @ti.func
     def Q_R(self, Q: ti.template(), i, idx):
-        idx_left = idx
-        idx_right = idx + 2*get_basis(i)
-        idx = idx + get_basis(i)
+        # idx_left = idx
+        # idx_right = idx + 2*get_basis(i)
+        # idx = idx + get_basis(i)
 
-        D_m = Q(idx) - Q(idx_left)
-        D_p = Q(idx_right) - Q(idx)
+        # D_m = Q(idx) - Q(idx_left)
+        # D_p = Q(idx_right) - Q(idx)
 
-        return Q(idx) - 0.25 * ( (1+self.k)*self.minmod(D_p / D_m)*D_m + (1-self.k)*self.minmod(D_m / D_p)*D_p)
+        # return Q(idx) - 0.25 * ( (1+self.k)*self.minmod(D_p / D_m)*D_m + (1-self.k)*self.minmod(D_m / D_p)*D_p)
+        return diff_fd.get_weno(Q, i, idx + get_basis(i))
 
     @ti.func
     def HLLD(self, flux_rho: ti.template(), flux_u: ti.template(), flux_B: ti.template(), 

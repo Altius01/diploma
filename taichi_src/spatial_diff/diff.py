@@ -2,7 +2,7 @@ import numpy as np
 import taichi as ti
 
 from taichi_src.kernels.common.types import *
-
+import taichi_src.common.matrix_ops as mat_ops
 # # type hints
 # # double = ti.types.f64
 # double = ti.types.f32
@@ -94,6 +94,38 @@ def get_diff_coefs(axe_1, axe_2, order):
     return coefs
 
 @ti.func
+def get_weno(foo: ti.template(), i, idx):
+    fm2 = foo(idx - 2*mat_ops.get_basis(i))
+    fm1 = foo(idx - mat_ops.get_basis(i))
+    f = foo(idx)
+    fp2 = foo(idx + mat_ops.get_basis(i))
+    fp2 = foo(idx + 2*mat_ops.get_basis(i))
+
+    g1 = 0.1
+    g2 = 0.6
+    g3 = 0.3
+
+    b1 = (13.0/12.0)*(fm2 - 2*fm1 + f)**2 + 0.25*(fm2 - 4*fm1 + 3*f)**2
+    b2 = (13.0/12.0)*(fm1 - 2*f + fp1)**2 + 0.25*(fm1 - fp1)**2
+    b3 = (13.0/12.0)*(f - 2*fp1 + fp2)**2 + 0.25*(3*f - 4*fp1 + fp2)**2
+
+    a1 = g1 / (b1 + 1e-6)**2
+    a2 = g2 / (b2 + 1e-6)**2
+    a3 = g3 / (b3 + 1e-6)**2
+
+    a_sum = a1 + a2 + a3
+
+    w1 = a1 / a_sum
+    w2 = a1 / a_sum
+    w3 = a1 / a_sum
+
+    return (
+        w1 * ((1.0/3.0) * fm2 - (7.0/6.0) * fm1 + (11.0/6.0) * f)
+        + w2 * (-(1.0/6.0) * fm1 + (5.0/6.0) * f + (1.0/3.0) * fp1)
+        + w3 * ((1.0/3.0) * f + (5.0/6.0) * fp1 - (1.0/6.0) * fp2)
+    )
+
+@ti.func
 def get_weighted_sum(foo: ti.template(), axes: ti.template(), stencil: ti.template(), coefs: ti.template()):
     result = double(0.0)
     for i in range(ti.static(len(stencil))):
@@ -110,6 +142,44 @@ def get_weighted_sum(foo: ti.template(), axes: ti.template(), stencil: ti.templa
             result += foo(idx) * coefs[i]
 
     return result
+
+@ti.func
+def get_weighted_sum_sc(foo: ti.template(), stencil: ti.template(), coefs: ti.template()):
+    result = double(0.0)
+    for i in ti.ndrange(5):
+        idx = vec3i(0)
+        for j in ti.ndrange(3):
+            idx[j] = stencil[i, j]
+
+        result += foo(idx) * coefs[i]
+
+    return result
+
+@ti.func
+def get_weighted_sum_vec(foo: ti.template(), axe: ti.template(), stencil: ti.template(), coefs: ti.template()):
+    result = double(0.0)
+    for i in ti.ndrange(5):
+        idx = vec3i(0)
+        for j in ti.ndrange(3):
+            idx[j] = stencil[i, j]
+
+        result += foo(idx)[axe] * coefs[i]
+
+    return result
+
+@ti.func
+def dx_sc(foo: ti.template(), diff_axe: ti.i32, h:double, idx):
+    coefs = get_diff_coefs(diff_axe, diff_axe, 1) / h
+    stencil = get_diff_stencil(diff_axe, diff_axe, idx, 1)
+
+    return get_weighted_sum_sc(foo, stencil, coefs)
+
+@ti.func
+def dx_vec(foo: ti.template(), axes, diff_axe: ti.i32, h:double, idx):
+    coefs = get_diff_coefs(diff_axe, diff_axe, 1) / h
+    stencil = get_diff_stencil(diff_axe, diff_axe, idx, 1)
+
+    return get_weighted_sum_vec(foo, axes, stencil, coefs)
 
 @ti.func
 def dx(foo: ti.template(), axes, diff_axe: ti.i32, h:double, idx):
