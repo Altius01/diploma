@@ -78,7 +78,8 @@ class TiSolver:
         if self.config.start_step == 0:
             Logger.log('Start solve initials.')
             # self.initials_rand()
-            self.initials_OT()
+            # self.initials_OT()
+            self.initials_SOD()
             self.initials_ghosts()
             self.save_file(self.current_step)
             Logger.log('Initials - done!')
@@ -147,6 +148,21 @@ class TiSolver:
                 self.B0*ti.math.sin(2.0*self.h[0]*x),
                 0
                 ])
+
+    @ti.kernel
+    def initials_SOD(self):
+        for idx in ti.grouped(self.rho[0]):
+            x, y, z = idx
+
+            if self.h[0]*x < ti.math.pi:
+                rho_ = 1.0
+            else:
+                rho_ = 0.125
+
+            self.rho[0][idx] = _rho
+            self.p[0][idx] = pow(rho_, self.gamma)
+            self.u[0][idx] = vec3(0)
+            self.B[0][idx] = vec3(0)
 
     @ti.kernel
     def initials_rand(self):
