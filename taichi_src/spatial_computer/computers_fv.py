@@ -31,6 +31,7 @@ class SystemComputer:
         self.les = les
 
         self.filter_size = vec3i([1, 1, 1])
+        self.k = -(1.0/3.0)
 
         self.rho_computer = RhoCompute(self.h, filter_size=self.filter_size, les=les)
         self.u_computer = MomentumCompute(Re, Ma, gamma, self.h, filter_size=self.filter_size, les=les)
@@ -172,9 +173,7 @@ class SystemComputer:
         D_m = Q(idx) - Q(idx_left)
         D_p = Q(idx_right) - Q(idx)
 
-        r = D_p / D_m
-
-        return Q(idx) + 0.5 * self.minmod(r)*D_m
+        return Q(idx) + 0.25 * ( (1-self.k)*self.minmod(D_p / D_m)*D_m + (1+self.k)*self.minmod(D_m / D_p)*D_p)
     
     @ti.func
     def Q_R(self, Q: ti.template(), i, idx):
@@ -185,9 +184,7 @@ class SystemComputer:
         D_m = Q(idx) - Q(idx_left)
         D_p = Q(idx_right) - Q(idx)
 
-        r = D_m / D_p
-
-        return Q(idx) - 0.5 * self.minmod(r)*D_p
+        return Q(idx) - 0.25 * ( (1+self.k)*self.minmod(D_p / D_m)*D_m + (1-self.k)*self.minmod(D_m / D_p)*D_p)
 
     @ti.func
     def flux_mat_right(self, flux_conv: ti.template(), flux_viscos: ti.template(), 

@@ -110,11 +110,12 @@ class TiSolver:
         self.fv_computer.update_data(self.rho[0], self.p[0], self.u[0], self.B[0])
         lambdas = self.fv_computer.get_cfl_cond()
 
-        return self.CFL / (
-            (lambdas[0] / self.h[0] + lambdas[1] / self.h[1] + lambdas[2] / self.h[2]) 
-            + 2 * (1.0/self.h[0]**2 + 1.0/self.h[1]**2 + 1.0/self.h[2]**2)
-        )
-        # (1/self.Re + 1/self.Rem)
+        denominator = (lambdas[0] / self.h[0] + lambdas[1] / self.h[1] + lambdas[2] / self.h[2])
+
+        if (self.ideal == False):
+            denominator += (1.0/self.h[0]**2 + 1.0/self.h[1]**2 + 1.0/self.h[2]**2)
+        
+        return self.CFL * (1.0 / denominator)
 
     @ti.func
     def _check_ghost(self, shape, idx):
