@@ -47,11 +47,12 @@ def dx_sc(foo: ti.template(), diff_axe, h, idx):
 
     for i, j in (ti.ndrange(2, 2)):
         dx_idx = idx + get_dx_st(diff_axe, i, j, left=True)
-        # new_idx_l = idx + get_dx_st(diff_axe, i, j, left=True)
-        # new_idx_r = idx + get_dx_st(diff_axe, i, j, left=False)
+        new_idx_l = idx + get_dx_st(diff_axe, i, j, left=True)
+        new_idx_r = idx + get_dx_st(diff_axe, i, j, left=False)
 
-        # result += ( foo(new_idx_r) - foo(new_idx_l) ) / h
-        result += diff_fd.dx_sc(foo, diff_axe, h, dx_idx)
+        result += ( foo(new_idx_r) - foo(new_idx_l) ) / h
+
+        # result += diff_fd.dx_sc(foo, diff_axe, h, dx_idx)
 
     return result / 4.0
 
@@ -60,13 +61,13 @@ def dx_vec(foo: ti.template(), axe, diff_axe, h, idx):
     result = double(0.0)
 
     for i, j in (ti.ndrange(2, 2)):
-        # new_idx_l = idx + get_dx_st(diff_axe, i, j, left=True)
-        # new_idx_r = idx + get_dx_st(diff_axe, i, j, left=False)
-        # result += ( get_elem_1d(foo(new_idx_r), axe) 
-        #     - get_elem_1d(foo(new_idx_l), axe) ) / h
+        new_idx_l = idx + get_dx_st(diff_axe, i, j, left=True)
+        new_idx_r = idx + get_dx_st(diff_axe, i, j, left=False)
+        result += ( get_elem_1d(foo(new_idx_r), axe) 
+            - get_elem_1d(foo(new_idx_l), axe) ) / h
 
-        dx_idx = idx + get_dx_st(diff_axe, i, j, left=True)
-        result += diff_fd.dx_vec(foo, axe, diff_axe, h, dx_idx)
+        # dx_idx = idx + get_dx_st(diff_axe, i, j, left=True)
+        # result += diff_fd.dx_vec(foo, axe, diff_axe, h, dx_idx)
 
     return result / 4.0
 

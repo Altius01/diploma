@@ -159,9 +159,9 @@ def main():
     #                             data_path=DNS_32_DATA_PATH, 
     #                             arch=arch)
     
-    # dns_16_solver = TiSolver(config=dns_16_config, 
-    #                             data_path=DNS_16_DATA_PATH, 
-    #                             arch=arch)
+    dns_16_solver = TiSolver(config=dns_16_config, 
+                                data_path=DNS_16_DATA_PATH, 
+                                arch=arch)
     
     # smag_64_solver = TiSolver(config=smag_64_config, 
     #                             data_path=SMAG_64_DATA_PATH, 
@@ -189,7 +189,7 @@ def main():
     cross_64_postprocess = TiDataProcessor(config=cross_64_config, 
                                             data_path=CROSS_64_DATA_PATH)
 
-    dns_128_solver.solve()
+    # dns_128_solver.solve()
     dns_128_postprocess.compute_energy_only()
 
     # dns_64_solver.solve()
@@ -211,7 +211,7 @@ def main():
          dns_128_postprocess, 
          dns_64_postprocess,
          dns_32_postprocess,
-         dns_16_postprocess,
+        #  dns_16_postprocess,
          smag_64_postprocess, 
          cross_64_postprocess,
      ]

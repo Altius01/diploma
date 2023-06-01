@@ -78,8 +78,8 @@ class TiSolver:
         if self.config.start_step == 0:
             Logger.log('Start solve initials.')
             # self.initials_rand()
-            # self.initials_OT()
-            self.initials_SOD()
+            self.initials_OT()
+            # self.initials_SOD()
             self.initials_ghosts()
             self.save_file(self.current_step)
             Logger.log('Initials - done!')
@@ -116,7 +116,7 @@ class TiSolver:
         if (self.ideal == False):
             denominator += (1.0/self.h[0]**2 + 1.0/self.h[1]**2 + 1.0/self.h[2]**2)
         
-        return self.CFL * (1.0 / denominator)
+        return self.CFL * (1.0 / (denominator + 1e-6))
 
     @ti.func
     def _check_ghost(self, shape, idx):
@@ -154,12 +154,11 @@ class TiSolver:
         for idx in ti.grouped(self.rho[0]):
             x, y, z = idx
 
-            if self.h[0]*x < ti.math.pi:
-                rho_ = 1.0
-            else:
+            rho_ = 1.0
+            if self.h[0]*x > ti.math.pi:
                 rho_ = 0.125
 
-            self.rho[0][idx] = _rho
+            self.rho[0][idx] = rho_
             self.p[0][idx] = pow(rho_, self.gamma)
             self.u[0][idx] = vec3(0)
             self.B[0][idx] = vec3(0)
@@ -231,6 +230,7 @@ class TiSolver:
             # if (self.debug_fv_step):
             #     print("computeRHO_U done!")
             #     print("sum_fields start...")
+
             if (self.debug_fv_step):
                 print("update_data done!")
                 print("compute HLLD start...")

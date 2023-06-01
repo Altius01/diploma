@@ -1,7 +1,7 @@
 import numpy as np
 import taichi as ti
 
-from taichi_src.kernels.common.types import *
+from taichi_src.common.types import *
 import taichi_src.common.matrix_ops as mat_ops
 # # type hints
 # # double = ti.types.f64
@@ -98,7 +98,7 @@ def get_weno(foo: ti.template(), i, idx):
     fm2 = foo(idx - 2*mat_ops.get_basis(i))
     fm1 = foo(idx - mat_ops.get_basis(i))
     f = foo(idx)
-    fp2 = foo(idx + mat_ops.get_basis(i))
+    fp1 = foo(idx + mat_ops.get_basis(i))
     fp2 = foo(idx + 2*mat_ops.get_basis(i))
 
     g1 = 0.1
