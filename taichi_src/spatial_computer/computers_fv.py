@@ -33,7 +33,7 @@ class SystemComputer:
         self.filter_size = vec3i([1, 1, 1])
 
         self.rho_computer = RhoCompute(self.h, filter_size=self.filter_size, les=les)
-        self.u_computer = MomentumCompute(Re, Ma, gamma, self.h, filter_size=self.filter_size, les=les)
+        self.u_computer = MomentumCompute(Re, Ma, self.h, filter_size=self.filter_size, les=les)
         self.B_computer = BCompute(Rem, delta_hall, self.h, filter_size=self.filter_size, les=les)
 
     def update_data(self, rho, p, u, B):
@@ -160,11 +160,11 @@ class SystemComputer:
 
         return result
     
-    @ti.func
-    def minmod(self, r):
+    @ti.kernel
+    def minmod(r):
         return ti.max(ti.min(r, 1), 0)
     
-    @ti.func
+    @ti.kernel
     def Q_L(self, Q: ti.template(), i, idx):
         idx_left = idx - get_basis(i)
         idx_right = idx + get_basis(i)
@@ -176,7 +176,7 @@ class SystemComputer:
 
         return Q(idx) + 0.5 * self.minmod(r)*D_m
     
-    @ti.func
+    @ti.kernel
     def Q_R(self, Q: ti.template(), i, idx):
         idx_left = idx
         idx_right = idx + 2*get_basis(i)
@@ -193,17 +193,17 @@ class SystemComputer:
     def flux_mat_right(self, flux_conv: ti.template(), flux_viscos: ti.template(), 
         flux_hall: ti.template(), flux_les: ti.template(), Q: ti.template(), i, idx):
 
-        Q_p = self.Q_R(Q, i, idx)
-        Q_m = self.Q_L(Q, i, idx)
+        Q_p = self.muscl_Q_R(self, Q, i, idx)
+        Q_m = self.muscl_Q_L(self, Q, i, idx)
 
-        Q_rho_p = self.Q_R(self.Q_rho, i, idx)
-        Q_rho_m = self.Q_L(self.Q_rho, i, idx)
+        Q_rho_p = self.muscl_Q_R(self, self.Q_rho, i, idx)
+        Q_rho_m = self.muscl_Q_L(self, self.Q_rho, i, idx)
 
-        Q_u_p = self.Q_R(self.Q_u, i, idx)
-        Q_u_m = self.Q_L(self.Q_u, i, idx)
+        Q_u_p = self.muscl_Q_R(self, self.Q_u, i, idx)
+        Q_u_m = self.muscl_Q_L(self, self.Q_u, i, idx)
 
-        Q_B_p = self.Q_R(self.Q_B, i, idx)
-        Q_B_m = self.Q_L(self.Q_B, i, idx)
+        Q_B_p = self.muscl_Q_R(self, self.Q_B, i, idx)
+        Q_B_m = self.muscl_Q_L(self, self.Q_B, i, idx)
 
         s_max = self.get_s_j_max(i, idx)
 
@@ -211,57 +211,47 @@ class SystemComputer:
             get_mat_col(flux_conv(Q_rho_p, Q_u_p, Q_B_p) + flux_conv(Q_rho_m, Q_u_m, Q_B_m), i)
             - s_max * (Q_p - Q_m) )
 
-        if ti.static(self.ideal==False):
+        if ti.static((self.ideal==False) or self.hall or (self.les != NonHallLES.DNS)):
             for j, k in ti.ndrange(2, 2):
                 corner = idx - vec3i(1) + get_dx_st(i, j, k, left=False)
                 V_rho = V_plus_sc(self.V_rho, corner)
                 V_u = V_plus_vec(self.V_B, corner)
                 V_B = V_plus_vec(self.V_B, corner)
 
-                result -= 0.25*get_mat_col(
-                    flux_viscos(V_rho, V_u, V_B, self.grad_U(corner), self.grad_B(corner))
-                    , i)
+                _grad_B = self.grad_B(corner)
+                if ti.static(self.ideal==False):
+                    result -= 0.25*get_mat_col(
+                        flux_viscos(V_rho, V_u, V_B, self.grad_U(corner), _grad_B)
+                        , i)
 
-        if ti.static(self.hall):
-            for j, k in ti.ndrange(2, 2):
-                corner = idx - vec3i(1) + get_dx_st(i, j, k, left=False)
-                V_rho = V_plus_sc(self.V_rho, corner)
-                V_u = V_plus_vec(self.V_B, corner)
-                V_B = V_plus_vec(self.V_B, corner)
-
-                result -= 0.25*get_mat_col(
-                    flux_hall(V_rho, V_u, V_B, self.grad_B(corner), self.rot_B(corner))
-                    , i)
+                if ti.static(self.hall):
+                    result -= 0.25*get_mat_col(
+                        flux_hall(V_rho, V_u, V_B, _grad_B, self.rot_B(corner))
+                        , i)
             
-        if ti.static(self.les != NonHallLES.DNS):
-            for j, k in ti.ndrange(2, 2):
-                corner = idx - vec3i(1) + get_dx_st(i, j, k, left=False)
-                V_rho = V_plus_sc(self.V_rho, corner)
-                V_u = V_plus_vec(self.V_B, corner)
-                V_B = V_plus_vec(self.V_B, corner)
-
-                result -= 0.25*get_mat_col(
-                    flux_les(V_rho, V_u, V_B, self.grad_U(corner), self.grad_B(corner), 
-                        self.rot_U(corner), self.rot_B(corner))
-                    , i)
+                if ti.static(self.les != NonHallLES.DNS):
+                    result -= 0.25*get_mat_col(
+                        flux_les(V_rho, V_u, V_B, self.grad_U(corner), _grad_B, 
+                            self.rot_U(corner), self.rot_B(corner))
+                        , i)
         
         return result
     
     @ti.func
-    def flux_vec_right(self, flux_conv: ti.template(), flux_viscos: ti.template(), 
+    def flux_mat_right(self, flux_conv: ti.template(), flux_viscos: ti.template(), 
         flux_hall: ti.template(), flux_les: ti.template(), Q: ti.template(), i, idx):
 
-        Q_p = self.Q_R(Q, i, idx)
-        Q_m = self.Q_L(Q, i, idx)
+        Q_p = self.muscl_Q_R(self, Q, i, idx)
+        Q_m = self.muscl_Q_L(self, Q, i, idx)
 
-        Q_rho_p = self.Q_R(self.Q_rho, i, idx)
-        Q_rho_m = self.Q_L(self.Q_rho, i, idx)
+        Q_rho_p = self.muscl_Q_R(self, self.Q_rho, i, idx)
+        Q_rho_m = self.muscl_Q_L(self, self.Q_rho, i, idx)
 
-        Q_u_p = self.Q_R(self.Q_u, i, idx)
-        Q_u_m = self.Q_L(self.Q_u, i, idx)
+        Q_u_p = self.muscl_Q_R(self, self.Q_u, i, idx)
+        Q_u_m = self.muscl_Q_L(self, self.Q_u, i, idx)
 
-        Q_B_p = self.Q_R(self.Q_B, i, idx)
-        Q_B_m = self.Q_L(self.Q_B, i, idx)
+        Q_B_p = self.muscl_Q_R(self, self.Q_B, i, idx)
+        Q_B_m = self.muscl_Q_L(self, self.Q_B, i, idx)
 
         s_max = self.get_s_j_max(i, idx)
 
@@ -446,7 +436,7 @@ class RhoCompute(Compute):
         return vec3(0)
 
     @ti.func
-    def flux_hall(self, V_rho, V_u, V_B, grad_B, rot_B):
+    def flux_viscous(self, V_rho, V_u, V_B, grad_B, rot_B):
         return vec3(0)
 
     @ti.func
@@ -480,9 +470,9 @@ class MomentumCompute(Compute):
         return (
             grad_U + grad_U.transpose() + (2.0/3.0) * divU * kron
         ) / self.Re
-    
+
     @ti.func
-    def flux_hall(self, V_rho, V_u, V_B, grad_B, rot_B):
+    def flux_viscous(self, V_rho, V_u, V_B, grad_B, rot_B):
         return mat3x3(0)
 
     @ti.func
@@ -509,7 +499,7 @@ class BCompute(Compute):
         ) / self.Rem
 
     @ti.func
-    def flux_hall(self, V_rho, V_u, V_B, grad_B, rot_B):
+    def flux_viscous(self, V_rho, V_u, V_B, grad_B, rot_B):
         j = rot_B
         v_h = - self.delta_hall * j / V_rho
         v_hB = v_h.outer_product(V_B)  

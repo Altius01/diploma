@@ -53,8 +53,15 @@ class TiSolver:
         self.p = [ti.field(dtype=double, shape=self.config.shape) for i in range(self.rk_steps)]
         self.rho = [ti.field(dtype=double, shape=self.config.shape) for i in range(self.rk_steps)]
 
-        self.fv_computer = LesComputer(self.gamma, self.Re, self.Ms, self.Ma, self.Rem, 
-            self.delta_hall, self.ghost, self.config.shape, self.h, self.config.domain_size, ideal=self.ideal, hall=self.hall,
+        self.grad_rho = ti.Vector.field(n=3, dtype=double, shape=self.config.shape)
+        self.rot_U = ti.Vector.field(n=3, dtype=double, shape=self.config.shape)
+        self.grad_U = ti.Matrix.field(n=3, m=3, dtype=double, shape=self.config.shape)
+        self.rot_B = ti.Vector.field(n=3, dtype=double, shape=self.config.shape)
+        self.grad_B = ti.Matrix.field(n=3, m=3, dtype=double, shape=self.config.shape)
+
+        self.fv_computer = LesComputer(self.gamma, self.Re, self.Ms, self.Ma, self.Rem, self.delta_hall,
+            self.grad_rho, self.grad_U, self.grad_B, self.rot_U, self.rot_B,
+            self.ghost, self.config.shape, self.h, self.config.domain_size, ideal=self.ideal, hall=self.hall,
              les=self.les_model)
 
     def read_file(self, i):
