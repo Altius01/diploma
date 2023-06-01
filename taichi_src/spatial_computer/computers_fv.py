@@ -134,6 +134,24 @@ class SystemComputer:
         ])
 
     @ti.func
+    def get_c_fast(self, Q_rho, Q_u, Q_B, i):
+        pi_rho = ti.sqrt(4 * ti.math.pi * Q_rho)
+
+        b = (1 / self.Ma) * Q_B.norm() / pi_rho
+        b_x = (1 / self.Ma) * Q_B[j] / pi_rho
+        # Sound speed
+        c = (1 / self.Ms) * ti.sqrt(self.gamma * p / rho)
+        # Alfen speed
+        c_a = (1 / self.Ma) * Q_B[j] / pi_rho
+
+        sq_root = ti.sqrt((b + c)**2 - 4 * b_x * c)
+
+        # Magnetosonic wawes
+        c_f = ti.sqrt( 0.5 * (b + c) + sq_root)
+
+        return c_f
+
+    @ti.func
     def get_s_j_max(self, j, idx):
         lambdas = ti.abs(self.get_eigenvals(j, idx))
 
@@ -185,6 +203,273 @@ class SystemComputer:
         D_p = Q(idx_right) - Q(idx)
 
         return Q(idx) - 0.25 * ( (1+self.k)*self.minmod(D_p / D_m)*D_m + (1-self.k)*self.minmod(D_m / D_p)*D_p)
+
+    @ti.func
+    def HLLD(self, flux_rho: ti.template(), flux_u: ti.template(), flux_B: ti.template(), 
+        Q_rho_L, Q_u_L, Q_B_L, Q_rho_R, Q_u_R, Q_B_R, i):
+        c_f_L = self.get_c_fast(Q_rho_L, Q_u_L, Q_B_L, i)
+        c_f_R = self.get_c_fast(Q_rho_R, Q_u_R, Q_B_R, i)
+        c_f_max = ti.max(c_f_L, c_f_R)
+
+        yz = get_idx_to_basis(i)
+        x = i
+        y = yz[0]
+        z = yz[1]
+
+        u_R = Q_u_R[x]
+        v_R = Q_u_R[y]
+        w_R = Q_u_R[z]
+
+        u_L = Q_u_L[x]
+        v_L = Q_u_L[y]
+        w_L = Q_u_L[z]
+
+        Bx_R = Q_B_R[x]
+        By_R = Q_B_R[y]
+        Bz_R = Q_B_R[z]
+
+        Bx_L = Q_B_L[x]
+        By_L = Q_B_L[y]
+        Bz_L = Q_B_L[z]
+
+        p_T_L = ti.pow(Q_rho_L, self.gamma) + Q_B_L.norm_sqr() / (2.0 * self.Ma**2)
+        p_T_R = ti.pow(Q_rho_R, self.gamma) + Q_B_R.norm_sqr() / (2.0 * self.Ma**2)
+
+        S_L = ti.min(u_L, u_R) - c_f_max
+        S_R = ti.max(u_L, u_R) + c_f_max
+
+        S_m = (
+            (S_R - u_R)*Q_rho_R*u_R - (S_L - u_L)*Q_rho_L*u_L - p_T_R + p_T_L
+        ) / (
+            (S_R - u_R)*Q_rho_R - (S_L - u_L)*Q_rho_L
+        )
+
+        # p_T_star = (
+        #     (S_R - u_R)*Q_rho_R*p_T_L - (S_L - u_L)*Q_rho_L*p_T_R + Q_rho_L*Q_rho_R*(S_R - u_R)*(S_L - u_L)*(u_R - u_L)
+        # ) / (
+        #     (S_R - u_R)*Q_rho_R - (S_L - u_L)*Q_rho_L
+        # )
+
+        rho_L_star = Q_rho_L*(S_L - u_L)/(S_L-S_m)
+        rho_R_star = Q_rho_R*(S_R - u_R)/(S_R-S_m)
+
+        v_L_star = v_L - Bx_L*By_L*(S_m - u_L)/(Q_rho_L*(S_L - u_L)*(S_L-S_m) - Bx_L**2 + 1e-6)
+        w_L_star = w_L - Bx_L*Bz_L*(S_m - u_L)/(Q_rho_L*(S_L - u_L)*(S_L-S_m) - Bx_L**2 + 1e-6)
+        By_L_star = By_L*(Q_rho_L*(S_L-u_L)**2 - Bx_L**2)/(Q_rho_L*(S_L - u_L)*(S_L - S_m) - Bx_L**2 + 1e-6)
+        Bz_L_star = Bz_L*(Q_rho_L*(S_L-u_L)**2 - Bx_L**2)/(Q_rho_L*(S_L - u_L)*(S_L - S_m) - Bx_L**2 + 1e-6)
+
+        v_R_star = v_R - Bx_R*By_R*(S_m - u_R)/(Q_rho_R*(S_R - u_R)*(S_R-S_m) - Bx_R**2 + 1e-6)
+        w_R_star = w_R - Bx_R*Bz_R*(S_m - u_R)/(Q_rho_R*(S_R - u_R)*(S_R-S_m) - Bx_R**2 + 1e-6)
+        By_R_star = By_R*(Q_rho_R*(S_R-u_R)**2 - Bx_R**2)/(Q_rho_R*(S_R - u_R)*(S_R - S_m) - Bx_R**2 + 1e-6)
+        Bz_R_star = Bz_R*(Q_rho_R*(S_R-u_R)**2 - Bx_R**2)/(Q_rho_R*(S_R - u_R)*(S_R - S_m) - Bx_R**2 + 1e-6)
+
+        sq_rho_L_star = ti.sqrt(rho_L_star)
+        sq_rho_R_star = ti.sqrt(rho_R_star)
+        signBx = ti.math.sign(Bx_L)
+
+        S_L_star = S_m - ti.abs(Bx)/sq_rho_L_star
+        S_R_star = S_m - ti.abs(Bx)/sq_rho_R_star
+
+        v_star_star = (
+            sq_rho_L_star * v_L_star + sq_rho_R_star * v_R_star + (By_R_star - By_L_star)*signBx
+        ) / (
+            sq_rho_L_star + sq_rho_R_star
+        )
+        w_star_star = (
+            sq_rho_L_star * w_L_star + sq_rho_R_star * w_R_star + (Bz_R_star - Bz_L_star)*signBx
+        ) / (
+            sq_rho_L_star + sq_rho_R_star
+        )
+
+        By_star_star = (
+            sq_rho_L_star * By_R_star + sq_rho_R_star * By_L_star 
+            + sq_rho_L_star*sq_rho_R_star*(v_R_star - v_L_star)*signBx
+        ) / (
+            sq_rho_L_star + sq_rho_R_star
+        )
+
+        Bz_star_star = (
+            sq_rho_L_star * Bz_R_star + sq_rho_R_star * Bz_L_star 
+            + sq_rho_L_star*sq_rho_R_star*(w_R_star - w_L_star)*signBx
+        ) / (
+            sq_rho_L_star + sq_rho_R_star
+        )
+
+        result = mat3x3(0)
+
+        Q_u_L_star = vec3(0)
+        Q_u_L_star[x] = S_m
+        Q_u_L_star[y] = v_L_star
+        Q_u_L_star[z] = w_L_star
+
+        Q_B_L_star = vec3(0)
+        Q_B_L_star[x] = Bx_L
+        Q_B_L_star[y] = By_L_star
+        Q_B_L_star[z] = Bz_L_star
+        
+        Q_u_R_star = vec3(0)
+        Q_u_R_star[x] = S_m
+        Q_u_R_star[y] = v_R_star
+        Q_u_R_star[z] = w_R_star
+
+        Q_B_R_star = vec3(0)
+        Q_B_L_star[x] = Bx_L
+        Q_B_L_star[y] = By_L_star
+        Q_B_L_star[z] = Bz_L_star
+
+        Q_u_star_star = vec3(0)
+        Q_u_star_star[x] = S_m
+        Q_u_star_star[y] = v_star_star
+        Q_u_star_star[z] = w_star_star
+
+        Q_B_star_star = vec3(0)
+        Q_B_star_star[x] = Bx_L
+        Q_B_star_star[y] = By_star_star
+        Q_B_star_star[z] = Bz_star_star
+        
+
+        if S_L > 0:
+            result[0, 0] = get_vec_col(flux_rho(Q_rho_L, Q_u_L, Q_B_L), i)
+
+            result[:, 1] = get_mat_col(flux_u(Q_rho_L, Q_u_L, Q_B_L), i)
+            result[:, 2] = get_mat_col(flux_B(Q_rho_L, Q_u_L, Q_B_L), i)
+        elif S_L <= 0 and S_L_star >= 0:
+            result[0, 0] = (get_vec_col(flux_rho(Q_rho_L, Q_u_L, Q_B_L), i)
+                + S_L*(rho_L_star - Q_rho_L)
+            )
+
+            result[:, 1] = (get_mat_col(flux_u(Q_rho_L, Q_u_L, Q_B_L), i)
+                + S_L*(Q_u_L_star - Q_u_L)
+            )
+            result[:, 2] = (get_mat_col(flux_B(Q_rho_L, Q_u_L, Q_B_L), i)
+                + S_L*(Q_B_L_star - Q_B_L)
+            )
+        elif S_L_star <= 0 and S_M >= 0:
+            result[0, 0] = (get_vec_col(flux_rho(Q_rho_L, Q_u_L, Q_B_L), i)
+                + S_L_star*rho_L_star - (S_L_star-S_L)*rho_L_star
+                - Q_rho_L*S_L
+            )
+
+            result[:, 1] = (get_mat_col(flux_u(Q_rho_L, Q_u_L, Q_B_L), i)
+                + S_L_star*Q_u_star_star - (S_L_star-S_L)*Q_u_L_star
+                - Q_u_L*S_L
+            )
+            result[:, 2] = (get_mat_col(flux_B(Q_rho_L, Q_u_L, Q_B_L), i)
+                + S_L_star*Q_B_star_star - (S_L_star-S_L)*Q_B_L_star
+                - Q_B_L*S_L
+            )
+        elif S_M <= 0 and S_R_star >= 0:
+            result[0, 0] = (get_vec_col(flux_rho(Q_rho_R, Q_u_R, Q_B_R), i)
+                + S_R_star*rho_R_star - (S_R_star-S_R)*rho_R_star
+                - Q_rho_R*S_R
+            )
+
+            result[:, 1] = (get_mat_col(flux_u(Q_rho_R, Q_u_R, Q_B_R), i)
+                + S_R_star*Q_u_star_star - (S_R_star-S_R)*Q_u_R_star
+                - Q_u_R*S_R
+            )
+            result[:, 2] = (get_mat_col(flux_B(Q_rho_R, Q_u_R, Q_B_R), i)
+                + S_R_star*Q_B_star_star - (S_R_star-S_R)*Q_B_R_star
+                - Q_B_R*S_R
+            )
+        elif S_R_star <= 0 and S_R >= 0:
+            result[0, 0] = (get_vec_col(flux_rho(Q_rho_R, Q_u_R, Q_B_R), i)
+                + S_R*(rho_R_star - Q_rho_R)
+            )
+
+            result[:, 1] = (get_mat_col(flux_u(Q_rho_R, Q_u_R, Q_B_R), i)
+                + S_R*(Q_u_R_star - Q_u_R)
+            )
+            result[:, 2] = (get_mat_col(flux_B(Q_rho_R, Q_u_R, Q_B_R), i)
+                + S_R*(Q_B_R_star - Q_B_R)
+            )
+        elif S_R <= 0:
+            result[0, 0] = get_vec_col(flux_rho(Q_rho_R, Q_u_R, Q_B_R), i)
+
+            result[:, 1] = get_mat_col(flux_u(Q_rho_R, Q_u_R, Q_B_R), i)
+            result[:, 2] = get_mat_col(flux_B(Q_rho_R, Q_u_R, Q_B_R), i)
+
+        return result
+        
+    @ti.kernel
+    def computeHLLD(self, out_rho: ti.template(), out_u: ti.template(), out_B: ti.template()):
+        computer = self.rho_computer
+        for idx in ti.grouped(self.rho):
+            if not self.check_ghost_idx(idx):
+                res = mat3x3(0)
+                for j in range(self.h.n):
+                    idx_r = idx
+                    idx_l = idx - get_basis(j)
+
+                    flux_r = self.flux_HLLD_right(computer.flux_convective, computer.flux_viscous,
+                    computer.flux_hall, computer.flux_les, self.Q_rho, j, idx_r)
+                    
+                    flux_l = self.flux_HLLD_right(computer.flux_convective, computer.flux_viscous,
+                    computer.flux_hall, computer.flux_les, self.Q_rho, j, idx_l)
+
+                    res -= (flux_r - flux_l) / get_elem_1d(self.h, j)
+
+                out_rho[idx] = res[0, 0]
+                out_u[idx] = res[:, 1]
+                out_B[idx] = res[:, 2]
+
+    @ti.func
+    def flux_HLLD_right(self, i, idx):
+        Q_rho_R = self.Q_R(self.Q_rho, i, idx)
+        Q_rho_L = self.Q_L(self.Q_rho, i, idx)
+
+        Q_u_R = self.Q_R(self.Q_u, i, idx)
+        Q_u_L = self.Q_L(self.Q_u, i, idx)
+
+        Q_B_R = self.Q_R(self.Q_B, i, idx)
+        Q_B_L = self.Q_L(self.Q_B, i, idx)
+
+        s_max = self.get_s_j_max(i, idx)
+
+        result = self.HLLD(self.rho_computer.flux_convective, 
+            self.u_computer.flux_convective, 
+            self.B_computer.flux_convective,
+            Q_rho_L, Q_u_L, Q_B_L, Q_rho_R, Q_u_R, Q_B_R, i)
+
+        if ti.static(self.ideal==False) or ti.static(self.hall) or ti.static(self.les != NonHallLES.DNS):
+            for j, k in ti.ndrange(2, 2):
+                corner = idx - vec3i(1) + get_dx_st(i, j, k, left=False)
+                V_rho = V_plus_sc(self.V_rho, corner)
+                V_u = V_plus_vec(self.V_B, corner)
+                V_B = V_plus_vec(self.V_B, corner)
+
+                if ti.static(self.ideal==False):
+                    gradU = self.grad_U(corner)
+                    gradB = self.grad_B(corner)
+
+                    result[:, 1] -= 0.25*get_mat_col(
+                        self.u_computer.flux_viscos(V_rho, V_u, V_B, gradU, gradB)
+                        , i)
+                    
+                    result[:, 2] -= 0.25*get_mat_col(
+                        self.B_computer.flux_viscos(V_rho, V_u, V_B, gradU, gradB)
+                        , i)
+
+                if ti.static(self.hall):
+                    result[:, 2] -= 0.25*get_vec_col(
+                        self.B_computer.flux_hall(V_rho, V_u, V_B, self.grad_B(corner), self.rot_B(corner))
+                        , i)
+                    
+                if ti.static(self.les != NonHallLES.DNS):
+                    gradU = self.grad_U(corner)
+                    gradB = self.grad_B(corner)
+                    rotU = self.rot_U(corner)
+                    rotB = self.rot_B(corner)
+
+                    result[:, 1] -= 0.25*get_vec_col(
+                        self.u_computer.flux_les(V_rho, V_u, V_B, gradU, gradB, rotU, rotB)
+                        , i)
+
+                    result[:, 2] -= 0.25*get_vec_col(
+                        self.B_computer.flux_les(V_rho, V_u, V_B, gradU, gradB, rotU, rotB)
+                        , i)
+        
+        return result
 
     @ti.func
     def flux_mat_right(self, flux_conv: ti.template(), flux_viscos: ti.template(), 

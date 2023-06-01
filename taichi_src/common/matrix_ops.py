@@ -121,3 +121,18 @@ def get_basis(j: int):
         result[2] = 1
 
     return result
+
+@ti.func
+def get_idx_to_basis(i: int):
+    result = vec2i(0)
+    if j == 0:
+        result[0] = 1
+        result[1] = 2
+    elif j == 1:
+        result[0] = 0
+        result[1] = 2
+    elif j == 2:
+        result[0] = 0
+        result[1] = 1
+
+    return result

@@ -196,24 +196,36 @@ class TiSolver:
             if (self.debug_fv_step):
                 print("update_data start...")
             self.fv_computer.update_data(self.rho[i], self.p[i], self.u[i], self.B[i])
+
+            # if (self.debug_fv_step):
+            #     print("update_data done!")
+            #     print("computeRho start...")
+            # self.fv_computer.computeRho(self.rho[i_k])
+            # self.fv_computer.ghosts_call(self.rho[i_k])
+            # if (self.debug_fv_step):
+            #     print("computeRho done!")
+            #     print("computeB start...")
+            # self.fv_computer.computeB(self.B[i_k])
+            # self.fv_computer.ghosts_call(self.B[i_k])
+            # if (self.debug_fv_step):
+            #     print("computeB done!")
+            #     print("computeRHO_U start...")
+            # self.fv_computer.computeRHO_U(self.u[i_k])
+            # self.fv_computer.ghosts_call(self.u[i_k])
+            # if (self.debug_fv_step):
+            #     print("computeRHO_U done!")
+            #     print("sum_fields start...")
             if (self.debug_fv_step):
                 print("update_data done!")
-                print("computeRho start...")
-            self.fv_computer.computeRho(self.rho[i_k])
+                print("compute HLLD start...")
+            self.fv_computer.computeHLLD(self.rho[i_k], self.u[i_k], self.B[i_k])
             self.fv_computer.ghosts_call(self.rho[i_k])
-            if (self.debug_fv_step):
-                print("computeRho done!")
-                print("computeB start...")
-            self.fv_computer.computeB(self.B[i_k])
             self.fv_computer.ghosts_call(self.B[i_k])
-            if (self.debug_fv_step):
-                print("computeB done!")
-                print("computeRHO_U start...")
-            self.fv_computer.computeRHO_U(self.u[i_k])
             self.fv_computer.ghosts_call(self.u[i_k])
             if (self.debug_fv_step):
-                print("computeRHO_U done!")
+                print("compute HLLD done!")
                 print("sum_fields start...")
+
             self.sum_fields(self.rho[i], self.rho[i_k], self.rho[i_next], c[0], c[1], c[2])
             self.sum_fields_u(self.u[i], self.u[i_k], self.u[i_next], self.rho[i], self.rho[i_next], c[0], c[1], c[2])
             self.sum_fields(self.B[i], self.B[i_k], self.B[i_next], c[0], c[1], c[2])
@@ -224,3 +236,5 @@ class TiSolver:
             self.fv_computer.ghosts_call(self.p[i_next])
             if (self.debug_fv_step):
                 print("computeP done!")
+
+            
