@@ -220,13 +220,13 @@ class SystemComputer:
         y = yz[0]
         z = yz[1]
 
-        u_R = Q_u_R[x]
-        v_R = Q_u_R[y]
-        w_R = Q_u_R[z]
+        u_R = Q_u_R[x] / Q_rho_R
+        v_R = Q_u_R[y] / Q_rho_R
+        w_R = Q_u_R[z] / Q_rho_R
 
-        u_L = Q_u_L[x]
-        v_L = Q_u_L[y]
-        w_L = Q_u_L[z]
+        u_L = Q_u_L[x] / Q_rho_L
+        v_L = Q_u_L[y] / Q_rho_L
+        w_L = Q_u_L[z] / Q_rho_L
 
         Bx_R = Q_B_R[x]
         By_R = Q_B_R[y]
@@ -235,6 +235,7 @@ class SystemComputer:
         Bx_L = Q_B_L[x]
         By_L = Q_B_L[y]
         Bz_L = Q_B_L[z]
+        
 
         p_T_L = ti.pow(Q_rho_L, self.gamma) + Q_B_L.norm_sqr() / (2.0 * self.Ma**2)
         p_T_R = ti.pow(Q_rho_R, self.gamma) + Q_B_R.norm_sqr() / (2.0 * self.Ma**2)
@@ -242,8 +243,10 @@ class SystemComputer:
         S_L = ti.min(u_L, u_R) - c_f_max
         S_R = ti.max(u_L, u_R) + c_f_max
 
+        Bx_hll = (S_R*Bx_R-S_L*Bx_L)/(S_R-S_L)
+
         S_m = (
-            (S_R - u_R)*Q_rho_R*u_R - (S_L - u_L)*Q_rho_L*u_L - p_T_R + p_T_L
+            (S_R - u_R)*Q_rho_R*u_R - (S_L - u_L)*Q_rho_L*u_L - p_T_R + p_T_L - Bx_L**2 + Bx_R**2
         ) / (
             (S_R - u_R)*Q_rho_R - (S_L - u_L)*Q_rho_L
         )
@@ -269,10 +272,10 @@ class SystemComputer:
 
         sq_rho_L_star = ti.sqrt(rho_L_star)
         sq_rho_R_star = ti.sqrt(rho_R_star)
-        signBx = ti.math.sign(Bx_L)
+        signBx = ti.math.sign(Bx_hll)
 
-        S_L_star = S_m - ti.abs(Bx_L)/sq_rho_L_star
-        S_R_star = S_m + ti.abs(Bx_R)/sq_rho_R_star
+        S_L_star = S_m - ti.abs(Bx_hll)/sq_rho_L_star
+        S_R_star = S_m + ti.abs(Bx_hll)/sq_rho_R_star
 
         v_star_star = (
             sq_rho_L_star * v_L_star + sq_rho_R_star * v_R_star + (By_R_star - By_L_star)*signBx
@@ -302,9 +305,9 @@ class SystemComputer:
         result = mat3x3(0)
 
         Q_u_L_star = vec3(0)
-        Q_u_L_star[x] = S_m
-        Q_u_L_star[y] = v_L_star
-        Q_u_L_star[z] = w_L_star
+        Q_u_L_star[x] = rho_L_star*S_m
+        Q_u_L_star[y] = rho_L_star*v_L_star
+        Q_u_L_star[z] = rho_L_star*w_L_star
 
         Q_B_L_star = vec3(0)
         Q_B_L_star[x] = 0
@@ -312,19 +315,24 @@ class SystemComputer:
         Q_B_L_star[z] = Bz_L_star
         
         Q_u_R_star = vec3(0)
-        Q_u_R_star[x] = S_m
-        Q_u_R_star[y] = v_R_star
-        Q_u_R_star[z] = w_R_star
+        Q_u_R_star[x] = rho_R_star*S_m
+        Q_u_R_star[y] = rho_R_star*v_R_star
+        Q_u_R_star[z] = rho_R_star*w_R_star
 
         Q_B_R_star = vec3(0)
         Q_B_L_star[x] = 0
         Q_B_L_star[y] = By_L_star
         Q_B_L_star[z] = Bz_L_star
 
-        Q_u_star_star = vec3(0)
-        Q_u_star_star[x] = S_m
-        Q_u_star_star[y] = v_star_star
-        Q_u_star_star[z] = w_star_star
+        Q_u_L_star_star = vec3(0)
+        Q_u_star_star[x] = rho_L_star*S_m
+        Q_u_star_star[y] = rho_L_star*v_star_star
+        Q_u_star_star[z] = rho_L_star*w_star_star
+
+        Q_u_R_star_star = vec3(0)
+        Q_u_star_star[x] = rho_R_star*S_m
+        Q_u_star_star[y] = rho_R_star*v_star_star
+        Q_u_star_star[z] = rho_R_star*w_star_star
 
         Q_B_star_star = vec3(0)
         Q_B_star_star[x] = 0
@@ -360,7 +368,7 @@ class SystemComputer:
             )
 
             result[:, 1] = (get_mat_col(flux_u(Q_rho_L, Q_u_L, Q_B_L), i)
-                + S_L_star*Q_u_star_star - (S_L_star-S_L)*Q_u_L_star
+                + S_L_star*Q_u_L_tar_star - (S_L_star-S_L)*Q_u_L_star
                 - Q_u_L*S_L
             )
             result[:, 2] = (get_mat_col(flux_B(Q_rho_L, Q_u_L, Q_B_L), i)
@@ -374,7 +382,7 @@ class SystemComputer:
             )
 
             result[:, 1] = (get_mat_col(flux_u(Q_rho_R, Q_u_R, Q_B_R), i)
-                + S_R_star*Q_u_star_star - (S_R_star-S_R)*Q_u_R_star
+                + S_R_star*Q_u_R_star_star - (S_R_star-S_R)*Q_u_R_star
                 - Q_u_R*S_R
             )
             result[:, 2] = (get_mat_col(flux_B(Q_rho_R, Q_u_R, Q_B_R), i)
