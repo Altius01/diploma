@@ -39,7 +39,7 @@ class SystemComputer:
 
     def update_data(self, rho, p, u, B):
         self.u = u
-        self.p = p
+        # self.p = p
         self.B = B
         self.rho = rho
 
@@ -105,7 +105,7 @@ class SystemComputer:
     def get_eigenvals(self, j, idx):
         u = self.u[idx]
         B = self.B[idx]
-        p = self.p[idx]
+        # p = self.p[idx]
         rho = self.rho[idx]
 
         pi_rho = ti.sqrt(4 * ti.math.pi * rho)
@@ -113,7 +113,7 @@ class SystemComputer:
         b = (1 / self.Ma) * B.norm() / pi_rho
         b_x = (1 / self.Ma) * B[j] / pi_rho
         # Sound speed
-        c = (1 / self.Ms) * ti.sqrt(self.gamma * p / rho)
+        c = (1 / self.Ms) * ti.sqrt(self.gamma * ti.pow(rho, self.gamma-1))
         # Alfen speed
         c_a = (1 / self.Ma) * B[j] / pi_rho
 
@@ -343,7 +343,7 @@ class SystemComputer:
     @ti.kernel
     def computeHLLD(self, out_rho: ti.template(), out_u: ti.template(), 
         out_B: ti.template(), out_E: ti.template()):
-        E_flux_idx = mat3x2i([[5, 6], [4, 6], [4, 5]])
+        E_flux_idx = mat3x2i([[1, 2], [0, 2], [0, 1]])
         for idx in ti.grouped(self.rho):
             if not self.check_ghost_idx(idx):
                 res = mat3x3(0)
@@ -392,6 +392,7 @@ class SystemComputer:
                 im1jm1k = vec3i([i-1, j-1, k])
                 im1jk = vec3i([i-1, j, k])                
 
+                res = vec3(0)
                 res[0] = (
                     self.h[2]*(E[ijk][2] - E[ijm1k][2]) 
                     + self.h[1]*(E[ijkm1][1] - E[ijk][1])
@@ -621,10 +622,11 @@ class SystemComputer:
                 out[idx] = res
 
     @ti.kernel
-    def computeP(self, out: ti.template(), rho_new: ti.template()):
-        for idx in ti.grouped(rho_new):
+    def computeP(self, out: ti.template(), B: ti.template()):
+        for idx in ti.grouped(B):
             if not self.check_ghost_idx(idx):
-                out[idx] = ti.math.pow(ti.cast(rho_new[idx], ti.f32), ti.cast(self.gamma, ti.f32))
+                # out[idx] = ti.math.pow(ti.cast(rho_new[idx], ti.f32), ti.cast(self.gamma, ti.f32))
+                out[idx] = 0.5*B[idx].norm_sqr()
 
     @ti.kernel
     def computeRHO_U(self, out: ti.template()):

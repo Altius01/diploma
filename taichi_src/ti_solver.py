@@ -5,6 +5,7 @@ from common.logger import Logger
 from common.data_service import DataService
 
 from taichi_src.common.types import *
+from taichi_src.common.matrix_ops import *
 from taichi_src.spatial_computer.computers_fv import SystemComputer
 from taichi_src.spatial_computer.les_computers_fv import LesComputer
 
@@ -189,14 +190,14 @@ class TiSolver:
         self.update_B_staggered()
         self.fv_computer.ghosts_call(self.B_staggered[0])
 
-    def update_B(self):
+    def update_B_call(self):
         self.update_B()
         self.fv_computer.ghosts_call(self.B[0])
 
     @ti.kernel
     def update_B_staggered(self):
         for idx in ti.grouped(self.B[0]):
-            if not self.check_ghost_idx(idx):
+            if not self.fv_computer.check_ghost_idx(idx):
                 result = vec3(0)
                 for i in ti.ndrange(3):
                     idx_left = idx
@@ -213,7 +214,7 @@ class TiSolver:
     @ti.kernel
     def update_B(self):
         for idx in ti.grouped(self.B[0]):
-            if not self.check_ghost_idx(idx):
+            if not self.fv_computer.check_ghost_idx(idx):
                 result = vec3(0)
                 for i in ti.ndrange(3):
                     idx_left = idx
@@ -246,6 +247,7 @@ class TiSolver:
         if (self.debug_fv_step):
             print(f'    Les coefs: C:{self.fv_computer.C}, Y:{self.fv_computer.Y}, D: {self.fv_computer.D}')
             print("update_les done!")
+        self.update_B_staggered_call()
         for i, c in enumerate(coefs):
             
             i_next = (i + 1) % self.rk_steps
@@ -279,9 +281,11 @@ class TiSolver:
             self.sum_fields(self.B_staggered[i], self.B_staggered[i_k], self.B_staggered[i_next], c[0], c[1], c[2])
             if (self.debug_fv_step):
                 print("sum_fields done!")
-                print("computeP start...")
-            self.fv_computer.computeP(self.p[i_next], self.rho[i_next])
-            self.fv_computer.ghosts_call(self.p[i_next])
-            if (self.debug_fv_step):
-                print("computeP done!")
-        self.update_B()
+                # print("computeP start...")
+            # self.fv_computer.computeP(self.p[i_next], self.rho[i_next])
+            
+            # if (self.debug_fv_step):
+            #     print("computeP done!")
+        self.update_B_call()
+        self.fv_computer.computeP(self.p[0], self.B[0])
+        self.fv_computer.ghosts_call(self.p[0])
