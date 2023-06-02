@@ -209,9 +209,10 @@ class SystemComputer:
         # return diff_fd.get_weno(Q, i, idx + get_basis(i))
         # return Q(idx+get_basis(i))
 
-    @ti.func
-    def HLLD(self, flux_rho: ti.template(), flux_u: ti.template(), flux_B: ti.template(), 
-        Q_rho_L, Q_u_L, Q_B_L, Q_rho_R, Q_u_R, Q_B_R, D_u, D_v, D_W, i):
+    @ti.kernel
+    def HLL(self, flux_rho: ti.template(), flux_u: ti.template(), flux_B: ti.template(), 
+        Q_rho_L, Q_u_L, Q_B_L, Q_rho_R, Q_u_R, Q_B_R, i):
+
         c_f_L = self.get_c_fast(Q_rho_L, Q_u_L, Q_B_L, i)
         c_f_R = self.get_c_fast(Q_rho_R, Q_u_R, Q_B_R, i)
         c_f_max = ti.max(c_f_L, c_f_R)
@@ -244,175 +245,102 @@ class SystemComputer:
         S_L = ti.min(0, ti.min(u_L, u_R) - c_f_max)
         S_R = ti.max(0, ti.max(u_L, u_R) + c_f_max)
 
-        Bx_hll = (S_R*Bx_R-S_L*Bx_L)/(S_R-S_L)
+        F_rho_L = get_vec_col(flux_rho(Q_rho_L, Q_u_L, Q_B_L), i)
+        F_rho_R = get_mat_col(flux_rho(Q_rho_R, Q_u_R, Q_B_R), i)
 
-        Theta = ti.min(1, 
-            (c_f_max - ti.min(0, D_u)) / (c_f_max - ti.min(D_v, D_w, 0))
-        )**4
+        F_u_L = get_vec_col(flux_u(Q_rho_L, Q_u_L, Q_B_L), i)
+        F_u_R = get_mat_col(flux_u(Q_rho_R, Q_u_R, Q_B_R), i)
 
-        S_m = (
-            (S_R - u_R)*Q_rho_R*u_R - (S_L - u_L)*Q_rho_L*u_L - Theta*(p_T_R - p_T_L) - Bx_L**2 + Bx_R**2
-        ) / (
-            (S_R - u_R)*Q_rho_R - (S_L - u_L)*Q_rho_L
-        )
+        F_B_L = get_vec_col(flux_B(Q_rho_L, Q_u_L, Q_B_L), i)
+        F_B_R = get_mat_col(flux_B(Q_rho_R, Q_u_R, Q_B_R), i)
 
-        # p_T_star = (
-        #     (S_R - u_R)*Q_rho_R*p_T_L - (S_L - u_L)*Q_rho_L*p_T_R + Q_rho_L*Q_rho_R*(S_R - u_R)*(S_L - u_L)*(u_R - u_L)
-        # ) / (
-        #     (S_R - u_R)*Q_rho_R - (S_L - u_L)*Q_rho_L
-        # )
+        Q_rho_hll = (S_R*Q_rho_R - S_L*Q_rho_L - F_rho_R + F_rho_L) / (S_R - S_L)
+        F_rho_hll = (S_R*F_rho_L - S_L*F_rho_R + S_R*S_L*(Q_rho_R - Q_rho_L)) / (S_R - S_L)
 
-        rho_L_star = Q_rho_L*(S_L - u_L)/(S_L-S_m)
-        rho_R_star = Q_rho_R*(S_R - u_R)/(S_R-S_m)
+        Q_u_hll = (S_R*Q_u_R - S_L*Q_u_L - F_u_R + F_u_L) / (S_R - S_L)
+        F_u_hll = (S_R*F_u_L - S_L*F_u_R + S_R*S_L*(Q_u_R - Q_u_L)) / (S_R - S_L)
 
-        v_L_star = v_L - Bx_L*By_L*(S_m - u_L)/(Q_rho_L*(S_L - u_L)*(S_L-S_m) - Bx_L**2 + 1e-6)
-        w_L_star = w_L - Bx_L*Bz_L*(S_m - u_L)/(Q_rho_L*(S_L - u_L)*(S_L-S_m) - Bx_L**2 + 1e-6)
-        By_L_star = By_L*(Q_rho_L*(S_L-u_L)**2 - Bx_L**2)/(Q_rho_L*(S_L - u_L)*(S_L - S_m) - Bx_L**2 + 1e-6)
-        Bz_L_star = Bz_L*(Q_rho_L*(S_L-u_L)**2 - Bx_L**2)/(Q_rho_L*(S_L - u_L)*(S_L - S_m) - Bx_L**2 + 1e-6)
+        Q_B_hll = (S_R*Q_B_R - S_L*Q_B_L - F_B_R + F_B_L) / (S_R - S_L)
 
-        v_R_star = v_R - Bx_R*By_R*(S_m - u_R)/(Q_rho_R*(S_R - u_R)*(S_R-S_m) - Bx_R**2 + 1e-6)
-        w_R_star = w_R - Bx_R*Bz_R*(S_m - u_R)/(Q_rho_R*(S_R - u_R)*(S_R-S_m) - Bx_R**2 + 1e-6)
-        By_R_star = By_R*(Q_rho_R*(S_R-u_R)**2 - Bx_R**2)/(Q_rho_R*(S_R - u_R)*(S_R - S_m) - Bx_R**2 + 1e-6)
-        Bz_R_star = Bz_R*(Q_rho_R*(S_R-u_R)**2 - Bx_R**2)/(Q_rho_R*(S_R - u_R)*(S_R - S_m) - Bx_R**2 + 1e-6)
+        Bx = Q_B_hll[x]
 
-        sq_rho_L_star = ti.sqrt(rho_L_star)
-        sq_rho_R_star = ti.sqrt(rho_R_star)
-        signBx = ti.math.sign(Bx_hll)
+        u_star = F_rho_hll / Q_rho_hll
 
-        S_L_star = S_m - ti.abs(Bx_hll)/sq_rho_L_star
-        S_R_star = S_m + ti.abs(Bx_hll)/sq_rho_R_star
+        ca = (1.0 / self.Ma) *  ( ti.abs(Bx) / ti.sqrt(4*ti.math.pi*Q_rho_hll) )
+        S_L_star = u_star - ca
+        S_R_star = u_star + ca
 
-        v_star_star = (
-            sq_rho_L_star * v_L_star + sq_rho_R_star * v_R_star + (By_R_star - By_L_star)*signBx
-        ) / (
-            sq_rho_L_star + sq_rho_R_star
-        )
-        w_star_star = (
-            sq_rho_L_star * w_L_star + sq_rho_R_star * w_R_star + (Bz_R_star - Bz_L_star)*signBx
-        ) / (
-            sq_rho_L_star + sq_rho_R_star
-        )
+        rho_v_L_star = Q_rho_hll * v_L - (1.0 / self.Ma**2) * Bx*By_L * (u_star - u_L) / ((S_L - S_L_star)*(S_L - S_R_star) + 1e-6)
+        rho_v_R_star = Q_rho_hll * v_R - (1.0 / self.Ma**2) * Bx*By_R * (u_star - u_R) / ((S_R - S_R_star)*(S_R - S_R_star) + 1e-6)
 
-        By_star_star = (
-            sq_rho_L_star * By_R_star + sq_rho_R_star * By_L_star 
-            + sq_rho_L_star*sq_rho_R_star*(v_R_star - v_L_star)*signBx
-        ) / (
-            sq_rho_L_star + sq_rho_R_star
-        )
+        rho_w_L_star = Q_rho_hll * w_L - (1.0 / self.Ma**2) * Bx*Bz_L * (u_star - u_L) / ((S_L - S_L_star)*(S_L - S_R_star) + 1e-6)
+        rho_w_R_star = Q_rho_hll * w_R - (1.0 / self.Ma**2) * Bx*Bz_R * (u_star - u_R) / ((S_R - S_L_star)*(S_R - S_R_star) + 1e-6)
 
-        Bz_star_star = (
-            sq_rho_L_star * Bz_R_star + sq_rho_R_star * Bz_L_star 
-            + sq_rho_L_star*sq_rho_R_star*(w_R_star - w_L_star)*signBx
-        ) / (
-            sq_rho_L_star + sq_rho_R_star
-        )
+        By_L_star = (By_L / Q_rho_hll) *( (Q_rho_L*(S_L - u_L)**2 - Bx**2) / ((S_L - S_L_star)*(S_L - S_R_star) + 1e-6))
+        By_R_star = (By_R / Q_rho_hll) *( (Q_rho_R*(S_R - u_R)**2 - Bx**2) / ((S_R - S_L_star)*(S_R - S_R_star) + 1e-6))
+
+        Bz_L_star = (Bz_L / Q_rho_hll) *( (Q_rho_L*(S_L - u_L)**2 - Bx**2) / ((S_L - S_L_star)*(S_L - S_R_star) + 1e-6))
+        Bz_R_star = (Bz_R / Q_rho_hll) *( (Q_rho_R*(S_R - u_R)**2 - Bx**2) / ((S_R - S_L_star)*(S_R - S_R_star) + 1e-6))
+
+        X = ti.sqrt(4*ti.math.pi*Q_rho_hll)
+        rho_v_C_star = 0.5*(rho_v_L_star + rho_v_R_star) + (0.5/self.Ma**2)*(By_R_star - By_L_star)*X
+        rho_w_C_star = 0.5*(rho_w_L_star + rho_w_R_star) + (0.5/self.Ma**2)*(Bz_R_star - Bz_L_star)*X
+        By_C_star = 0.5*(By_L_star + By_R_star) + 0.5*(rho_v_R_star - rho_v_L_star) / (X + 1e-6)
+        Bz_C_star = 0.5*(Bz_L_star + Bz_R_star) + 0.5*(rho_w_R_star - rho_w_L_star) / (X + 1e-6)
 
         result = mat3x3(0)
 
-        Q_u_L_star = vec3(0)
-        Q_u_L_star[x] = rho_L_star*S_m
-        Q_u_L_star[y] = rho_L_star*v_L_star
-        Q_u_L_star[z] = rho_L_star*w_L_star
+        Q_u_L_star = Q_u_hll
+        Q_u_L_star[y] = rho_v_L_star
+        Q_u_L_star[z] = rho_w_L_star
 
-        Q_B_L_star = vec3(0)
-        Q_B_L_star[x] = 0
-        Q_B_L_star[y] = By_L_star
-        Q_B_L_star[z] = Bz_L_star
-        
-        Q_u_R_star = vec3(0)
-        Q_u_R_star[x] = rho_R_star*S_m
-        Q_u_R_star[y] = rho_R_star*v_R_star
-        Q_u_R_star[z] = rho_R_star*w_R_star
+        Q_u_R_star = Q_u_hll
+        Q_u_R_star[y] = rho_v_R_star
+        Q_u_R_star[z] = rho_w_R_star
 
-        Q_B_R_star = vec3(0)
-        Q_B_L_star[x] = 0
+        Q_B_L_star = Q_B_L
         Q_B_L_star[y] = By_L_star
         Q_B_L_star[z] = Bz_L_star
 
-        Q_u_L_star_star = vec3(0)
-        Q_u_L_star_star[x] = rho_L_star*S_m
-        Q_u_L_star_star[y] = rho_L_star*v_star_star
-        Q_u_L_star_star[z] = rho_L_star*w_star_star
+        Q_B_R_star = Q_B_R
+        Q_B_R_star[y] = By_R_star
+        Q_B_R_star[z] = Bz_R_star
 
-        Q_u_R_star_star = vec3(0)
-        Q_u_R_star_star[x] = rho_R_star*S_m
-        Q_u_R_star_star[y] = rho_R_star*v_star_star
-        Q_u_R_star_star[z] = rho_R_star*w_star_star
+        F_rho_C_star = Q_rho_hll*u_star
 
-        Q_B_star_star = vec3(0)
-        Q_B_star_star[x] = 0
-        Q_B_star_star[y] = By_star_star
-        Q_B_star_star[z] = Bz_star_star
-        
-        Q_B_L_old = Q_B_L
-        Q_B_L_old[x] = 0
-        
-        Q_B_R_old = Q_B_R
-        Q_B_R_old[x] = 0
+        F_u_C_star = vec3(0)
+        F_u_C_star[x] = F_u_hll[x]
+        F_u_C_star[y] = rho_v_C_star*u_star - Bx*By_C_star
+        F_u_C_star[z] = rho_w_C_star*u_star - Bx*Bz_C_star
+
+        F_B_C_star = vec3(0)
+        F_u_C_star[y] = By_C_star*u_star - Bx*rho_v_C_star/Q_rho_hll
+        F_u_C_star[z] = Bz_C_star*u_star - Bx*rho_w_C_star/Q_rho_hll
 
         if S_L > 0:
-            result[0, 0] = get_vec_col(flux_rho(Q_rho_L, Q_u_L, Q_B_L), i)
-
-            result[:, 1] = get_mat_col(flux_u(Q_rho_L, Q_u_L, Q_B_L), i)
-            result[:, 2] = get_mat_col(flux_B(Q_rho_L, Q_u_L, Q_B_L), i)
-        elif S_L <= 0 and S_L_star >= 0:
-            result[0, 0] = (get_vec_col(flux_rho(Q_rho_L, Q_u_L, Q_B_L), i)
-                + S_L*(rho_L_star - Q_rho_L)
-            )
-
-            result[:, 1] = (get_mat_col(flux_u(Q_rho_L, Q_u_L, Q_B_L), i)
-                + S_L*(Q_u_L_star - Q_u_L)
-            )
-            result[:, 2] = (get_mat_col(flux_B(Q_rho_L, Q_u_L, Q_B_L), i)
-                + S_L*(Q_B_L_star - Q_B_L_old)
-            )
-        elif S_L_star <= 0 and S_m >= 0:
-            result[0, 0] = (get_vec_col(flux_rho(Q_rho_L, Q_u_L, Q_B_L), i)
-                + S_L_star*rho_L_star - (S_L_star-S_L)*rho_L_star
-                - Q_rho_L*S_L
-            )
-
-            result[:, 1] = (get_mat_col(flux_u(Q_rho_L, Q_u_L, Q_B_L), i)
-                + S_L_star*Q_u_L_star_star - (S_L_star-S_L)*Q_u_L_star
-                - Q_u_L*S_L
-            )
-            result[:, 2] = (get_mat_col(flux_B(Q_rho_L, Q_u_L, Q_B_L), i)
-                + S_L_star*Q_B_star_star - (S_L_star-S_L)*Q_B_L_star
-                - Q_B_L_old*S_L
-            )
-        elif S_m <= 0 and S_R_star >= 0:
-            result[0, 0] = (get_vec_col(flux_rho(Q_rho_R, Q_u_R, Q_B_R), i)
-                + S_R_star*rho_R_star - (S_R_star-S_R)*rho_R_star
-                - Q_rho_R*S_R
-            )
-
-            result[:, 1] = (get_mat_col(flux_u(Q_rho_R, Q_u_R, Q_B_R), i)
-                + S_R_star*Q_u_R_star_star - (S_R_star-S_R)*Q_u_R_star
-                - Q_u_R*S_R
-            )
-            result[:, 2] = (get_mat_col(flux_B(Q_rho_R, Q_u_R, Q_B_R), i)
-                + S_R_star*Q_B_star_star - (S_R_star-S_R)*Q_B_R_star
-                - Q_B_R_old*S_R
-            )
-        elif S_R_star <= 0 and S_R >= 0:
-            result[0, 0] = (get_vec_col(flux_rho(Q_rho_R, Q_u_R, Q_B_R), i)
-                + S_R*(rho_R_star - Q_rho_R)
-            )
-
-            result[:, 1] = (get_mat_col(flux_u(Q_rho_R, Q_u_R, Q_B_R), i)
-                + S_R*(Q_u_R_star - Q_u_R)
-            )
-            result[:, 2] = (get_mat_col(flux_B(Q_rho_R, Q_u_R, Q_B_R), i)
-                + S_R*(Q_B_R_star - Q_B_R_old)
-            )
-        elif S_R <= 0:
-            result[0, 0] = get_vec_col(flux_rho(Q_rho_R, Q_u_R, Q_B_R), i)
-
-            result[:, 1] = get_mat_col(flux_u(Q_rho_R, Q_u_R, Q_B_R), i)
-            result[:, 2] = get_mat_col(flux_B(Q_rho_R, Q_u_R, Q_B_R), i)
+            result[0, 0] = F_rho_L
+            result[:, 1] = F_u_L
+            result[:, 2] = F_B_L
+        elif S_L_star > 0:
+            result[0, 0] = F_rho_L + S_L*(Q_rho_hll - Q_rho_L)
+            result[:, 1] = F_u_L + S_L*(Q_u_L_star - Q_u_L)
+            result[:, 2] = F_B_L + S_L*(Q_B_L_star - Q_B_L)
+        elif S_R_star > 0:
+            result[0, 0] = F_rho_C_star
+            result[:, 1] = F_u_C_star
+            result[:, 2] = F_B_C_star
+        elif S_R > 0:
+            result[0, 0] = F_rho_R + S_R*(Q_rho_hll - Q_rho_R)
+            result[:, 1] = F_u_R + S_R*(Q_u_R_star - Q_u_R)
+            result[:, 2] = F_B_R + S_R*(Q_B_R_star - Q_B_R)
+        else:
+            result[0, 0] = F_rho_R
+            result[:, 1] = F_u_R
+            result[:, 2] = F_B_R
 
         return result
-        
+
+
     @ti.kernel
     def computeHLLD(self, out_rho: ti.template(), out_u: ti.template(), out_B: ti.template()):
         for idx in ti.grouped(self.rho):
@@ -443,32 +371,31 @@ class SystemComputer:
         Q_B_R = self.Q_R(self.Q_B, i, idx)
         Q_B_L = self.Q_L(self.Q_B, i, idx)
 
-        yz = get_idx_to_basis(j)
-        x = j
-        y = yz[0]
-        z = yz[1]
+        # yz = get_idx_to_basis(j)
+        # x = j
+        # y = yz[0]
+        # z = yz[1]
 
-        Delta_u = self.u[idx + get_basis(x)][x] - self.u[idx][x]
-        Delta_v = ti.min(
-            self.u[idx][y] - self.u[idx - get_basis(y)][y],
-            self.u[idx + get_basis(y)][y] - self.u[idx][y],
-            self.u[idx + get_basis(x)][y] - self.u[idx + get_basis(x) - get_basis(y)][y],
-            self.u[idx + get_basis(x) + get_basis(y)][y] - self.u[idx + get_basis(x)][y]
-        )
-        Delta_w = ti.min(
-            self.u[idx][z] - self.u[idx - get_basis(z)][z],
-            self.u[idx + get_basis(z)][z] - self.u[idx][z],
-            self.u[idx + get_basis(x)][z] - self.u[idx + get_basis(x) - get_basis(z)][z],
-            self.u[idx + get_basis(x) + get_basis(z)][z] - self.u[idx + get_basis(x)][z]
-        )
+        # Delta_u = self.u[idx + get_basis(x)][x] - self.u[idx][x]
+        # Delta_v = ti.min(
+        #     self.u[idx][y] - self.u[idx - get_basis(y)][y],
+        #     self.u[idx + get_basis(y)][y] - self.u[idx][y],
+        #     self.u[idx + get_basis(x)][y] - self.u[idx + get_basis(x) - get_basis(y)][y],
+        #     self.u[idx + get_basis(x) + get_basis(y)][y] - self.u[idx + get_basis(x)][y]
+        # )
+        # Delta_w = ti.min(
+        #     self.u[idx][z] - self.u[idx - get_basis(z)][z],
+        #     self.u[idx + get_basis(z)][z] - self.u[idx][z],
+        #     self.u[idx + get_basis(x)][z] - self.u[idx + get_basis(x) - get_basis(z)][z],
+        #     self.u[idx + get_basis(x) + get_basis(z)][z] - self.u[idx + get_basis(x)][z]
+        # )
 
         # s_max = self.get_s_j_max(i, idx)
 
         result = self.HLLD(self.rho_computer.flux_convective, 
             self.u_computer.flux_convective, 
             self.B_computer.flux_convective,
-            Q_rho_L, Q_u_L, Q_B_L, Q_rho_R, Q_u_R, Q_B_R, 
-            Delta_u, Delta_v, Delta_w, i)
+            Q_rho_L, Q_u_L, Q_B_L, Q_rho_R, Q_u_R, Q_B_R, i)
 
         if ti.static(self.ideal==False) or ti.static(self.hall) or ti.static(self.les != NonHallLES.DNS):
             for j, k in ti.ndrange(2, 2):
@@ -490,7 +417,7 @@ class SystemComputer:
                         , i)
 
                 if ti.static(self.hall):
-                    result[:, 2] -= 0.25*get_vec_col(
+                    result[:, 2] -= 0.25*get_mat_col(
                         self.B_computer.flux_hall(V_rho, V_u, V_B, self.grad_B(corner), self.rot_B(corner))
                         , i)
                     
@@ -500,11 +427,11 @@ class SystemComputer:
                     rotU = self.rot_U(corner)
                     rotB = self.rot_B(corner)
 
-                    result[:, 1] -= 0.25*get_vec_col(
+                    result[:, 1] -= 0.25*get_mat_col(
                         self.u_computer.flux_les(V_rho, V_u, V_B, gradU, gradB, rotU, rotB)
                         , i)
 
-                    result[:, 2] -= 0.25*get_vec_col(
+                    result[:, 2] -= 0.25*get_mat_col(
                         self.B_computer.flux_les(V_rho, V_u, V_B, gradU, gradB, rotU, rotB)
                         , i)
         
