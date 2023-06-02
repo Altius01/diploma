@@ -31,7 +31,8 @@ class SystemComputer:
         self.les = les
 
         self.filter_size = vec3i([1, 1, 1])
-        self.k = -(1.0/3.0)
+        # self.k = -(1.0/3.0)
+        self.k = 1
 
         self.rho_computer = RhoCompute(self.h, filter_size=self.filter_size, les=les)
         self.u_computer = MomentumCompute(Re, Ma, gamma, self.h, filter_size=self.filter_size, les=les)
@@ -185,28 +186,28 @@ class SystemComputer:
     
     @ti.func
     def Q_L(self, Q: ti.template(), i, idx):
-        # idx_left = idx - get_basis(i)
-        # idx_right = idx + get_basis(i)
+        idx_left = idx - get_basis(i)
+        idx_right = idx + get_basis(i)
                                     
-        # D_m = Q(idx) - Q(idx_left)
-        # D_p = Q(idx_right) - Q(idx)
+        D_m = Q(idx) - Q(idx_left)
+        D_p = Q(idx_right) - Q(idx)
 
-        # return Q(idx) + 0.25 * ( (1-self.k)*self.minmod(D_p / D_m)*D_m + (1+self.k)*self.minmod(D_m / D_p)*D_p)
+        return Q(idx) + 0.25 * ( (1-self.k)*self.minmod(D_p / D_m)*D_m + (1+self.k)*self.minmod(D_m / D_p)*D_p)
         # return diff_fd.get_weno(Q, i, idx)
-        return Q(idx)
+        # return Q(idx)
     
     @ti.func
     def Q_R(self, Q: ti.template(), i, idx):
-        # idx_left = idx
-        # idx_right = idx + 2*get_basis(i)
-        # idx = idx + get_basis(i)
+        idx_left = idx
+        idx_right = idx + 2*get_basis(i)
+        idx = idx + get_basis(i)
 
-        # D_m = Q(idx) - Q(idx_left)
-        # D_p = Q(idx_right) - Q(idx)
+        D_m = Q(idx) - Q(idx_left)
+        D_p = Q(idx_right) - Q(idx)
 
-        # return Q(idx) - 0.25 * ( (1+self.k)*self.minmod(D_p / D_m)*D_m + (1-self.k)*self.minmod(D_m / D_p)*D_p)
+        return Q(idx) - 0.25 * ( (1+self.k)*self.minmod(D_p / D_m)*D_m + (1-self.k)*self.minmod(D_m / D_p)*D_p)
         # return diff_fd.get_weno(Q, i, idx + get_basis(i))
-        return Q(idx+get_basis(i))
+        # return Q(idx+get_basis(i))
 
     @ti.func
     def HLLD(self, flux_rho: ti.template(), flux_u: ti.template(), flux_B: ti.template(), 
@@ -325,14 +326,14 @@ class SystemComputer:
         Q_B_L_star[z] = Bz_L_star
 
         Q_u_L_star_star = vec3(0)
-        Q_u_star_star[x] = rho_L_star*S_m
-        Q_u_star_star[y] = rho_L_star*v_star_star
-        Q_u_star_star[z] = rho_L_star*w_star_star
+        Q_u_L_star_star[x] = rho_L_star*S_m
+        Q_u_L_star_star[y] = rho_L_star*v_star_star
+        Q_u_L_star_star[z] = rho_L_star*w_star_star
 
         Q_u_R_star_star = vec3(0)
-        Q_u_star_star[x] = rho_R_star*S_m
-        Q_u_star_star[y] = rho_R_star*v_star_star
-        Q_u_star_star[z] = rho_R_star*w_star_star
+        Q_u_R_star_star[x] = rho_R_star*S_m
+        Q_u_R_star_star[y] = rho_R_star*v_star_star
+        Q_u_R_star_star[z] = rho_R_star*w_star_star
 
         Q_B_star_star = vec3(0)
         Q_B_star_star[x] = 0
@@ -368,7 +369,7 @@ class SystemComputer:
             )
 
             result[:, 1] = (get_mat_col(flux_u(Q_rho_L, Q_u_L, Q_B_L), i)
-                + S_L_star*Q_u_L_tar_star - (S_L_star-S_L)*Q_u_L_star
+                + S_L_star*Q_u_L_star_star - (S_L_star-S_L)*Q_u_L_star
                 - Q_u_L*S_L
             )
             result[:, 2] = (get_mat_col(flux_B(Q_rho_L, Q_u_L, Q_B_L), i)
@@ -438,7 +439,7 @@ class SystemComputer:
         Q_B_R = self.Q_R(self.Q_B, i, idx)
         Q_B_L = self.Q_L(self.Q_B, i, idx)
 
-        s_max = self.get_s_j_max(i, idx)
+        # s_max = self.get_s_j_max(i, idx)
 
         result = self.HLLD(self.rho_computer.flux_convective, 
             self.u_computer.flux_convective, 

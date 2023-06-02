@@ -190,7 +190,7 @@ def main():
                                             data_path=CROSS_64_DATA_PATH)
 
     # dns_128_solver.solve()
-    dns_128_postprocess.compute_energy_only()
+    # dns_128_postprocess.compute_energy_only()
 
     # dns_64_solver.solve()
     # dns_64_postprocess.compute_energy_only()
@@ -208,10 +208,10 @@ def main():
     # cross_64_postprocess.compute_energy_only()
 
     postprocesses = [
-         dns_128_postprocess, 
+        #  dns_128_postprocess, 
          dns_64_postprocess,
          dns_32_postprocess,
-        #  dns_16_postprocess,
+         dns_16_postprocess,
          smag_64_postprocess, 
          cross_64_postprocess,
      ]
