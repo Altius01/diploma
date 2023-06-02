@@ -341,10 +341,15 @@ class SystemComputer:
 
 
     @ti.kernel
-    def computeHLLD(self, out_rho: ti.template(), out_u: ti.template(), out_B: ti.template()):
+    def computeHLLD(self, out_rho: ti.template(), out_u: ti.template(), 
+        out_B: ti.template(), out_E: ti.template()):
+        E_flux_idx = mat3x2i([[5, 6], [4, 6], [4, 5]])
         for idx in ti.grouped(self.rho):
             if not self.check_ghost_idx(idx):
                 res = mat3x3(0)
+
+                F_L = mat3x2(0)
+                F_R = mat3x2(0)
                 for j in range(self.h.n):
                     idx_r = idx
                     idx_l = idx - get_basis(j)
@@ -353,11 +358,56 @@ class SystemComputer:
                     
                     flux_l = self.flux_HLLD_right(j, idx_l)
 
+                    E_idx = E_flux_idx[j, :]
+
+                    F_L[j, 0] = flux_l[E_idx[0], 2]
+                    F_L[j, 1] = flux_l[E_idx[1], 2]
+
+                    F_R[j, 0] = flux_r[E_idx[0], 2]
+                    F_R[j, 1] = flux_r[E_idx[1], 2]
+
                     res -= (flux_r - flux_l) / get_elem_1d(self.h, j)
 
                 out_rho[idx] = res[0, 0]
                 out_u[idx] = res[:, 1]
                 out_B[idx] = res[:, 2]
+
+                E = vec3(0)
+                E[0] = 0.25 * (F_R[2, 1] + F_L[2, 1] - F_L[1, 1] - F_R[1, 1])
+                E[1] = 0.25 * (F_R[0, 1] + F_L[0, 1] - F_L[2, 0] - F_R[2, 0])
+                E[2] = 0.25 * (F_R[1, 0] + F_L[1, 0] - F_L[0, 0] - F_R[0, 0])
+                out_E[idx] = E
+
+    @ti.kernel
+    def computeB_staggered(self, E: ti.template(), B_stag_out: ti.template()):
+        for idx in ti.grouped(self.rho):
+            if not self.check_ghost_idx(idx):
+
+                i, j, k = idx
+
+                ijk = vec3i([i, j, k])
+                ijm1k = vec3i([i, j-1, k])
+                ijkm1 = vec3i([i, j, k-1])
+                ijm1km1 = vec3i([i, j-1, k-1])
+                im1jm1k = vec3i([i-1, j-1, k])
+                im1jk = vec3i([i-1, j, k])                
+
+                res[0] = (
+                    self.h[2]*(E[ijk][2] - E[ijm1k][2]) 
+                    + self.h[1]*(E[ijkm1][1] - E[ijk][1])
+                    ) / (self.h[1]*self.h[2])
+
+                res[1] = (
+                    self.h[0]*(E[ijm1k][0] - E[ijm1km1][0])
+                    + self.h[2]*(E[im1jm1k][2] - E[ijm1k][2])
+                ) / (self.h[0]*self.h[2])
+
+                res[2] = (
+                    self.h[0]*(E[ijm1k][0] - E[ijk][0])
+                    + self.h[1]*(E[ijk][1] - E[im1jk][1])
+                ) / (self.h[0]*self.h[1])
+
+                B_stag_out[idx] = res
 
     @ti.func
     def flux_HLLD_right(self, i, idx):

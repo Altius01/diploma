@@ -9,6 +9,7 @@ vec2 = ti.types.vector(n=2, dtype=double)
 vec3 = ti.types.vector(n=3, dtype=double)
 vec4 = ti.types.vector(n=4, dtype=double)
 vec5 = ti.types.vector(n=5, dtype=double)
+mat3x2 = ti.types.matrix(n=3, m=2, dtype=double)
 mat3x3 = ti.types.matrix(n=3, m=3, dtype=double)
 
 vec0i = ti.types.vector(n=0, dtype=int)

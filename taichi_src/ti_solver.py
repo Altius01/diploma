@@ -50,6 +50,8 @@ class TiSolver:
 
         self.u = [ti.Vector.field(n=3, dtype=double, shape=self.config.shape) for i in range(self.rk_steps)]
         self.B = [ti.Vector.field(n=3, dtype=double, shape=self.config.shape) for i in range(self.rk_steps)]
+        self.B_staggered = [ti.Vector.field(n=3, dtype=double, shape=self.config.shape) for i in range(self.rk_steps)]
+        self.E = ti.Vector.field(n=3, dtype=double, shape=self.config.shape)
         self.p = [ti.field(dtype=double, shape=self.config.shape) for i in range(self.rk_steps)]
         self.rho = [ti.field(dtype=double, shape=self.config.shape) for i in range(self.rk_steps)]
 
@@ -181,6 +183,50 @@ class TiSolver:
         self.fv_computer.ghosts_call(self.u[0])
         self.fv_computer.ghosts_call(self.B[0])
 
+        self.update_B_staggered_call()
+
+    def update_B_staggered_call(self):
+        self.update_B_staggered()
+        self.fv_computer.ghosts_call(self.B_staggered[0])
+
+    def update_B(self):
+        self.update_B()
+        self.fv_computer.ghosts_call(self.B[0])
+
+    @ti.kernel
+    def update_B_staggered(self):
+        for idx in ti.grouped(self.B[0]):
+            if not self.check_ghost_idx(idx):
+                result = vec3(0)
+                for i in ti.ndrange(3):
+                    idx_left = idx
+                    idx_right = idx + get_basis(i)
+
+                    if i == 1:
+                        idx_left = idx - get_basis(i)
+                        idx_right = idx
+
+                    result[i] = 0.5*(self.B[0][idx_left][i] + self.B[0][idx_right][i])
+
+                self.B_staggered[0][idx] = result
+
+    @ti.kernel
+    def update_B(self):
+        for idx in ti.grouped(self.B[0]):
+            if not self.check_ghost_idx(idx):
+                result = vec3(0)
+                for i in ti.ndrange(3):
+                    idx_left = idx
+                    idx_right = idx - get_basis(i)
+
+                    if i == 1:
+                        idx_left = idx + get_basis(i)
+                        idx_right = idx
+
+                    result[i] = 0.5*(self.B_staggered[0][idx_left][i] + self.B_staggered[0][idx_right][i])
+
+                self.B[0][idx] = result
+
     @ti.kernel
     def sum_fields(self, a: ti.template(), b:ti.template(), c:ti.template(), c1:double, c2:double, c3:double):
         for idx in ti.grouped(a):
@@ -212,32 +258,17 @@ class TiSolver:
                 print("update_data start...")
             self.fv_computer.update_data(self.rho[i], self.p[i], self.u[i], self.B[i])
 
-            # if (self.debug_fv_step):
-            #     print("update_data done!")
-            #     print("computeRho start...")
-            # self.fv_computer.computeRho(self.rho[i_k])
-            # self.fv_computer.ghosts_call(self.rho[i_k])
-            # if (self.debug_fv_step):
-            #     print("computeRho done!")
-            #     print("computeB start...")
-            # self.fv_computer.computeB(self.B[i_k])
-            # self.fv_computer.ghosts_call(self.B[i_k])
-            # if (self.debug_fv_step):
-            #     print("computeB done!")
-            #     print("computeRHO_U start...")
-            # self.fv_computer.computeRHO_U(self.u[i_k])
-            # self.fv_computer.ghosts_call(self.u[i_k])
-            # if (self.debug_fv_step):
-            #     print("computeRHO_U done!")
-            #     print("sum_fields start...")
-
             if (self.debug_fv_step):
                 print("update_data done!")
                 print("compute HLLD start...")
-            self.fv_computer.computeHLLD(self.rho[i_k], self.u[i_k], self.B[i_k])
+            self.fv_computer.computeHLLD(self.rho[i_k], self.u[i_k], self.B[i_k], self.E)
             self.fv_computer.ghosts_call(self.rho[i_k])
             self.fv_computer.ghosts_call(self.B[i_k])
             self.fv_computer.ghosts_call(self.u[i_k])
+            self.fv_computer.ghosts_call(self.E)
+
+            self.fv_computer.computeB_staggered(self.E, self.B_staggered[i_k])
+            self.fv_computer.ghosts_call(self.B_staggered[i_k])
             if (self.debug_fv_step):
                 print("compute HLLD done!")
                 print("sum_fields start...")
@@ -245,6 +276,7 @@ class TiSolver:
             self.sum_fields(self.rho[i], self.rho[i_k], self.rho[i_next], c[0], c[1], c[2])
             self.sum_fields_u(self.u[i], self.u[i_k], self.u[i_next], self.rho[i], self.rho[i_next], c[0], c[1], c[2])
             self.sum_fields(self.B[i], self.B[i_k], self.B[i_next], c[0], c[1], c[2])
+            self.sum_fields(self.B_staggered[i], self.B_staggered[i_k], self.B_staggered[i_next], c[0], c[1], c[2])
             if (self.debug_fv_step):
                 print("sum_fields done!")
                 print("computeP start...")
@@ -252,5 +284,4 @@ class TiSolver:
             self.fv_computer.ghosts_call(self.p[i_next])
             if (self.debug_fv_step):
                 print("computeP done!")
-
-            
+        self.update_B()
