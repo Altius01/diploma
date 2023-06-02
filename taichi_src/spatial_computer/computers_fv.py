@@ -123,15 +123,16 @@ class SystemComputer:
         c_s = ti.sqrt( 0.5 * (b + c) - sq_root)
         c_f = ti.sqrt( 0.5 * (b + c) + sq_root)
 
-        return ti.Vector([
-            u[j] + c_f,
-            u[j] - c_f,
-            u[j] + c_s,
-            u[j] - c_s,
-            u[j] + c_a,
-            u[j] - c_a,
-            0,
-        ])
+        return c_f
+        # return ti.Vector([
+        #     u[j] + c_f,
+        #     u[j] - c_f,
+        #     u[j] + c_s,
+        #     u[j] - c_s,
+        #     u[j] + c_a,
+        #     u[j] - c_a,
+        #     0,
+        # ])
 
     @ti.func
     def get_c_fast(self, Q_rho, Q_u, Q_B, j):
@@ -151,23 +152,23 @@ class SystemComputer:
 
         return c_f
 
-    @ti.func
-    def get_s_j_max(self, j, idx):
-        lambdas = ti.abs(self.get_eigenvals(j, idx))
+    # @ti.func
+    # def get_s_j_max(self, j, idx):
+        # lambdas = ti.abs(self.get_eigenvals(j, idx))
 
-        result = double(0.0)
-        for i in ti.ndrange(lambdas.n):
-            result = ti.max(result, lambdas[i])
+        # result = double(0.0)
+        # for i in ti.ndrange(lambdas.n):
+        #     result = ti.max(result, lambdas[i])
 
-        return result
+        # return result
 
     @ti.func
     def get_s_max(self, idx):
         result = vec3(0)
 
-        result[0] = self.get_s_j_max(0, idx)
-        result[1] = self.get_s_j_max(1, idx)
-        result[2] = self.get_s_j_max(2, idx)
+        result[0] = self.get_eigenvals(0, idx)
+        result[1] = self.get_eigenvals(1, idx)
+        result[2] = self.get_eigenvals(2, idx)
 
         return result
 

@@ -97,6 +97,8 @@ class TiSolver:
 
             # dT = 1e-1 * ( min(self.config.domain_size) / max(self.config.true_shape))**2
             dT = self.get_cfl()
+            if (self.debug_fv_step):
+                print(f"CFL: dT: {dT}")
             # print(dT)
 
             self.current_time += dT
@@ -256,13 +258,13 @@ class TiSolver:
             if i_k == 0:
                 i_k += 1
 
-            if (self.debug_fv_step):
-                print("update_data start...")
+            # if (self.debug_fv_step):
+            #     print("update_data start...")
             self.fv_computer.update_data(self.rho[i], self.p[i], self.u[i], self.B[i])
 
-            if (self.debug_fv_step):
-                print("update_data done!")
-                print("compute HLLD start...")
+            # if (self.debug_fv_step):
+            #     print("update_data done!")
+            #     print("compute HLLD start...")
             self.fv_computer.computeHLLD(self.rho[i_k], self.u[i_k], self.B[i_k], self.E)
             self.fv_computer.ghosts_call(self.rho[i_k])
             self.fv_computer.ghosts_call(self.B[i_k])
@@ -271,16 +273,16 @@ class TiSolver:
 
             self.fv_computer.computeB_staggered(self.E, self.B_staggered[i_k])
             self.fv_computer.ghosts_call(self.B_staggered[i_k])
-            if (self.debug_fv_step):
-                print("compute HLLD done!")
-                print("sum_fields start...")
+            # if (self.debug_fv_step):
+            #     print("compute HLLD done!")
+            #     print("sum_fields start...")
 
             self.sum_fields(self.rho[i], self.rho[i_k], self.rho[i_next], c[0], c[1], c[2])
             self.sum_fields_u(self.u[i], self.u[i_k], self.u[i_next], self.rho[i], self.rho[i_next], c[0], c[1], c[2])
             self.sum_fields(self.B[i], self.B[i_k], self.B[i_next], c[0], c[1], c[2])
             self.sum_fields(self.B_staggered[i], self.B_staggered[i_k], self.B_staggered[i_next], c[0], c[1], c[2])
-            if (self.debug_fv_step):
-                print("sum_fields done!")
+            # if (self.debug_fv_step):
+            #     print("sum_fields done!")
                 # print("computeP start...")
             # self.fv_computer.computeP(self.p[i_next], self.rho[i_next])
             
