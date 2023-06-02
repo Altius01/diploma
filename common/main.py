@@ -198,8 +198,8 @@ def main():
     # dns_32_solver.solve()
     # dns_32_postprocess.compute_energy_only()
 
-    # dns_16_solver.solve()
-    # dns_16_postprocess.compute_energy_only()
+    dns_16_solver.solve()
+    dns_16_postprocess.compute_energy_only()
 
     # smag_64_solver.solve()
     # smag_64_postprocess.compute_energy_only()
@@ -209,11 +209,11 @@ def main():
 
     postprocesses = [
         #  dns_128_postprocess, 
-         dns_64_postprocess,
-         dns_32_postprocess,
+        #  dns_64_postprocess,
+        #  dns_32_postprocess,
          dns_16_postprocess,
-         smag_64_postprocess, 
-         cross_64_postprocess,
+        #  smag_64_postprocess, 
+        #  cross_64_postprocess,
      ]
 
     plot_energies(postprocesses)

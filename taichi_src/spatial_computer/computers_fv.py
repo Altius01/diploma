@@ -192,8 +192,8 @@ class SystemComputer:
         D_m = Q(idx) - Q(idx_left)
         D_p = Q(idx_right) - Q(idx)
 
-        return Q(idx) + 0.25 * ( (1-self.k)*self.minmod(D_p / D_m)*D_m + (1+self.k)*self.minmod(D_m / D_p)*D_p)
-        # return diff_fd.get_weno(Q, i, idx)
+        # return Q(idx) + 0.25 * ( (1-self.k)*self.minmod(D_p / D_m)*D_m + (1+self.k)*self.minmod(D_m / D_p)*D_p)
+        return diff_fd.get_weno(Q, i, idx)
         # return Q(idx)
     
     @ti.func
@@ -205,12 +205,12 @@ class SystemComputer:
         D_m = Q(idx) - Q(idx_left)
         D_p = Q(idx_right) - Q(idx)
 
-        return Q(idx) - 0.25 * ( (1+self.k)*self.minmod(D_p / D_m)*D_m + (1-self.k)*self.minmod(D_m / D_p)*D_p)
-        # return diff_fd.get_weno(Q, i, idx + get_basis(i))
+        # return Q(idx) - 0.25 * ( (1+self.k)*self.minmod(D_p / D_m)*D_m + (1-self.k)*self.minmod(D_m / D_p)*D_p)
+        return diff_fd.get_weno(Q, i, idx + get_basis(i))
         # return Q(idx+get_basis(i))
 
-    @ti.kernel
-    def HLL(self, flux_rho: ti.template(), flux_u: ti.template(), flux_B: ti.template(), 
+    @ti.func
+    def HLLD(self, flux_rho: ti.template(), flux_u: ti.template(), flux_B: ti.template(), 
         Q_rho_L, Q_u_L, Q_B_L, Q_rho_R, Q_u_R, Q_B_R, i):
 
         c_f_L = self.get_c_fast(Q_rho_L, Q_u_L, Q_B_L, i)
@@ -246,12 +246,12 @@ class SystemComputer:
         S_R = ti.max(0, ti.max(u_L, u_R) + c_f_max)
 
         F_rho_L = get_vec_col(flux_rho(Q_rho_L, Q_u_L, Q_B_L), i)
-        F_rho_R = get_mat_col(flux_rho(Q_rho_R, Q_u_R, Q_B_R), i)
+        F_rho_R = get_vec_col(flux_rho(Q_rho_R, Q_u_R, Q_B_R), i)
 
-        F_u_L = get_vec_col(flux_u(Q_rho_L, Q_u_L, Q_B_L), i)
+        F_u_L = get_mat_col(flux_u(Q_rho_L, Q_u_L, Q_B_L), i)
         F_u_R = get_mat_col(flux_u(Q_rho_R, Q_u_R, Q_B_R), i)
 
-        F_B_L = get_vec_col(flux_B(Q_rho_L, Q_u_L, Q_B_L), i)
+        F_B_L = get_mat_col(flux_B(Q_rho_L, Q_u_L, Q_B_L), i)
         F_B_R = get_mat_col(flux_B(Q_rho_R, Q_u_R, Q_B_R), i)
 
         Q_rho_hll = (S_R*Q_rho_R - S_L*Q_rho_L - F_rho_R + F_rho_L) / (S_R - S_L)
@@ -397,7 +397,7 @@ class SystemComputer:
             self.B_computer.flux_convective,
             Q_rho_L, Q_u_L, Q_B_L, Q_rho_R, Q_u_R, Q_B_R, i)
 
-        if ti.static(self.ideal==False) or ti.static(self.hall) or ti.static(self.les != NonHallLES.DNS):
+        if ti.static(self.ideal==False or self.hall or(self.les != NonHallLES.DNS)):
             for j, k in ti.ndrange(2, 2):
                 corner = idx - vec3i(1) + get_dx_st(i, j, k, left=False)
                 V_rho = V_plus_sc(self.V_rho, corner)
