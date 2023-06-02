@@ -211,7 +211,7 @@ class SystemComputer:
 
     @ti.func
     def HLLD(self, flux_rho: ti.template(), flux_u: ti.template(), flux_B: ti.template(), 
-        Q_rho_L, Q_u_L, Q_B_L, Q_rho_R, Q_u_R, Q_B_R, i):
+        Q_rho_L, Q_u_L, Q_B_L, Q_rho_R, Q_u_R, Q_B_R, D_u, D_v, D_W, i):
         c_f_L = self.get_c_fast(Q_rho_L, Q_u_L, Q_B_L, i)
         c_f_R = self.get_c_fast(Q_rho_R, Q_u_R, Q_B_R, i)
         c_f_max = ti.max(c_f_L, c_f_R)
@@ -241,13 +241,17 @@ class SystemComputer:
         p_T_L = ti.pow(Q_rho_L, self.gamma) + Q_B_L.norm_sqr() / (2.0 * self.Ma**2)
         p_T_R = ti.pow(Q_rho_R, self.gamma) + Q_B_R.norm_sqr() / (2.0 * self.Ma**2)
 
-        S_L = ti.min(u_L, u_R) - c_f_max
-        S_R = ti.max(u_L, u_R) + c_f_max
+        S_L = ti.min(0, ti.min(u_L, u_R) - c_f_max)
+        S_R = ti.max(0, ti.max(u_L, u_R) + c_f_max)
 
         Bx_hll = (S_R*Bx_R-S_L*Bx_L)/(S_R-S_L)
 
+        Theta = ti.min(1, 
+            (c_f_max - ti.min(0, D_u)) / (c_f_max - ti.min(D_v, D_w, 0))
+        )**4
+
         S_m = (
-            (S_R - u_R)*Q_rho_R*u_R - (S_L - u_L)*Q_rho_L*u_L - p_T_R + p_T_L - Bx_L**2 + Bx_R**2
+            (S_R - u_R)*Q_rho_R*u_R - (S_L - u_L)*Q_rho_L*u_L - Theta*(p_T_R - p_T_L) - Bx_L**2 + Bx_R**2
         ) / (
             (S_R - u_R)*Q_rho_R - (S_L - u_L)*Q_rho_L
         )
@@ -417,7 +421,7 @@ class SystemComputer:
                 for j in range(self.h.n):
                     idx_r = idx
                     idx_l = idx - get_basis(j)
-
+            
                     flux_r = self.flux_HLLD_right(j, idx_r)
                     
                     flux_l = self.flux_HLLD_right(j, idx_l)
@@ -439,12 +443,32 @@ class SystemComputer:
         Q_B_R = self.Q_R(self.Q_B, i, idx)
         Q_B_L = self.Q_L(self.Q_B, i, idx)
 
+        yz = get_idx_to_basis(j)
+        x = j
+        y = yz[0]
+        z = yz[1]
+
+        Delta_u = self.u[idx + get_basis(x)][x] - self.u[idx][x]
+        Delta_v = ti.min(
+            self.u[idx][y] - self.u[idx - get_basis(y)][y],
+            self.u[idx + get_basis(y)][y] - self.u[idx][y],
+            self.u[idx + get_basis(x)][y] - self.u[idx + get_basis(x) - get_basis(y)][y],
+            self.u[idx + get_basis(x) + get_basis(y)][y] - self.u[idx + get_basis(x)][y]
+        )
+        Delta_w = ti.min(
+            self.u[idx][z] - self.u[idx - get_basis(z)][z],
+            self.u[idx + get_basis(z)][z] - self.u[idx][z],
+            self.u[idx + get_basis(x)][z] - self.u[idx + get_basis(x) - get_basis(z)][z],
+            self.u[idx + get_basis(x) + get_basis(z)][z] - self.u[idx + get_basis(x)][z]
+        )
+
         # s_max = self.get_s_j_max(i, idx)
 
         result = self.HLLD(self.rho_computer.flux_convective, 
             self.u_computer.flux_convective, 
             self.B_computer.flux_convective,
-            Q_rho_L, Q_u_L, Q_B_L, Q_rho_R, Q_u_R, Q_B_R, i)
+            Q_rho_L, Q_u_L, Q_B_L, Q_rho_R, Q_u_R, Q_B_R, 
+            Delta_u, Delta_v, Delta_w, i)
 
         if ti.static(self.ideal==False) or ti.static(self.hall) or ti.static(self.les != NonHallLES.DNS):
             for j, k in ti.ndrange(2, 2):
