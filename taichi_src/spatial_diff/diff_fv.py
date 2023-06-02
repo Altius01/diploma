@@ -46,12 +46,12 @@ def dx_sc(foo: ti.template(), diff_axe, h, idx):
     result = double(0.0)
 
     for i, j in (ti.ndrange(2, 2)):
-        dx_idx = idx + get_dx_st(diff_axe, i, j, left=True)
         new_idx_l = idx + get_dx_st(diff_axe, i, j, left=True)
         new_idx_r = idx + get_dx_st(diff_axe, i, j, left=False)
 
         result += ( foo(new_idx_r) - foo(new_idx_l) ) / h
 
+        # dx_idx = idx + get_dx_st(diff_axe, i, j, left=True)
         # result += diff_fd.dx_sc(foo, diff_axe, h, dx_idx)
 
     return result / 4.0

@@ -31,6 +31,8 @@ class TiSolver:
         self.ideal = config.ideal
         self.hall = config.hall
 
+        self.div_cleaning = False
+
         Logger.log(f'Starting with:')
         Logger.log(f'   Shape: {config.true_shape}')
         Logger.log(f'   CFL: {self.CFL}, LES_Model: {self.les_model}, Ideal: {self.ideal}, Hall: {self.hall}')
@@ -44,6 +46,8 @@ class TiSolver:
         self.shape = self.config.shape
         for i, l in enumerate(self.config.domain_size):
             self.h[i] = l / self.config.true_shape[i]
+
+        self.ghosts_system = self.fv_computer.ghosts_periodic_call
 
         self.data_service = DataService(dir_name=data_path,rw_energy=self.config.rewrite_energy)
 
@@ -80,9 +84,11 @@ class TiSolver:
 
         if self.config.start_step == 0:
             Logger.log('Start solve initials.')
+
             # self.initials_rand()
             self.initials_OT()
             # self.initials_SOD()
+
             self.initials_ghosts()
             self.save_file(self.current_step)
             Logger.log('Initials - done!')
@@ -95,19 +101,14 @@ class TiSolver:
 
         while self.current_time < self.config.end_time or (self.current_step % self.config.rw_del != 0):
 
-            # dT = 1e-1 * ( min(self.config.domain_size) / max(self.config.true_shape))**2
             dT = self.get_cfl()
             if (self.debug_fv_step):
                 print(f"CFL: dT: {dT}")
-            # print(dT)
 
             self.current_time += dT
             self.current_step += 1
 
             self.FV_step(dT)
-
-            # if self.config.model.lower() != 'dns':
-            #     self.compute_coefs()
 
             if self.current_step % self.config.rw_del == 0:
                 self.save_file(self.current_step)
@@ -142,7 +143,6 @@ class TiSolver:
             x, y, z = idx
 
             self.rho[0][idx] = self.RHO0
-            self.p[0][idx] = pow(ti.cast(self.RHO0, ti.f32), ti.cast(self.gamma, ti.f32))
             self.u[0][idx] = vec3([
                 -(1 + self.eps_p*ti.math.sin(self.h[2]*z))*self.U0*ti.math.sin(self.h[1]*y),
                 (1 + self.eps_p*ti.math.sin(self.h[2]*z))*self.U0*ti.math.sin(self.h[0]*x),
@@ -160,11 +160,10 @@ class TiSolver:
             x, y, z = idx
 
             rho_ = 1.0
-            if self.h[0]*x > ti.math.pi:
+            if x > self.shape[0]:
                 rho_ = 0.125
 
             self.rho[0][idx] = rho_
-            self.p[0][idx] = pow(rho_, self.gamma)
             self.u[0][idx] = vec3(0)
             self.B[0][idx] = vec3(0)
 
@@ -175,18 +174,13 @@ class TiSolver:
             
             _rho = self.RHO0*(1 + 1e-2*ti.randn(dt=double))
             self.rho[0][idx] = _rho
-            self.p[0][idx] = pow(ti.cast(_rho, ti.f32), ti.cast(self.gamma, ti.f32))
-
             self.u[0][idx] = self.U0 * (vec3(1) + 1e-2*vec3([ti.randn(dt=double), ti.randn(dt=double), ti.randn(dt=double)]))
             self.B[0][idx] = self.B0 * (vec3(1) + 1e-2*vec3([ti.randn(dt=double), ti.randn(dt=double), ti.randn(dt=double)]))
 
     def initials_ghosts(self):
-        self.fv_computer.ghosts_call(self.rho[0])
-        self.fv_computer.ghosts_call(self.p[0])
-        self.fv_computer.ghosts_call(self.u[0])
-        self.fv_computer.ghosts_call(self.B[0])
-
-        self.update_B_staggered_call()
+        self.ghosts_system(self.rho[0], self.u[0], self.B[0])
+        if self.div_cleaning == True:
+            self.update_B_staggered_call()
 
     def update_B_staggered_call(self):
         self.update_B_staggered()
@@ -249,7 +243,9 @@ class TiSolver:
         if (self.debug_fv_step):
             print(f'    Les coefs: C:{self.fv_computer.C}, Y:{self.fv_computer.Y}, D: {self.fv_computer.D}')
             print("update_les done!")
-        self.update_B_staggered_call()
+
+        if self.div_cleaning == True:
+            self.update_B_staggered_call()
         for i, c in enumerate(coefs):
             
             i_next = (i + 1) % self.rk_steps
@@ -258,36 +254,27 @@ class TiSolver:
             if i_k == 0:
                 i_k += 1
 
-            # if (self.debug_fv_step):
-            #     print("update_data start...")
+
             self.fv_computer.update_data(self.rho[i], self.p[i], self.u[i], self.B[i])
 
-            # if (self.debug_fv_step):
-            #     print("update_data done!")
-            #     print("compute HLLD start...")
+
             self.fv_computer.computeHLLD(self.rho[i_k], self.u[i_k], self.B[i_k], self.E)
-            self.fv_computer.ghosts_call(self.rho[i_k])
-            self.fv_computer.ghosts_call(self.B[i_k])
-            self.fv_computer.ghosts_call(self.u[i_k])
-            self.fv_computer.ghosts_call(self.E)
+
+            self.ghosts_system(self.rho[i_k], self.u[i_k], self.B[i_k])
+
+            if self.div_cleaning == True:
+                self.fv_computer.ghosts_periodic_foo_call(self.E)
 
             self.fv_computer.computeB_staggered(self.E, self.B_staggered[i_k])
             self.fv_computer.ghosts_call(self.B_staggered[i_k])
-            # if (self.debug_fv_step):
-            #     print("compute HLLD done!")
-            #     print("sum_fields start...")
+
 
             self.sum_fields(self.rho[i], self.rho[i_k], self.rho[i_next], c[0], c[1], c[2])
             self.sum_fields_u(self.u[i], self.u[i_k], self.u[i_next], self.rho[i], self.rho[i_next], c[0], c[1], c[2])
             self.sum_fields(self.B[i], self.B[i_k], self.B[i_next], c[0], c[1], c[2])
             self.sum_fields(self.B_staggered[i], self.B_staggered[i_k], self.B_staggered[i_next], c[0], c[1], c[2])
-            # if (self.debug_fv_step):
-            #     print("sum_fields done!")
-                # print("computeP start...")
-            # self.fv_computer.computeP(self.p[i_next], self.rho[i_next])
-            
-            # if (self.debug_fv_step):
-            #     print("computeP done!")
-        self.update_B_call()
+
+        if self.div_cleaning == True:
+            self.update_B_call()
         self.fv_computer.computeP(self.p[0], self.B[0])
         self.fv_computer.ghosts_call(self.p[0])

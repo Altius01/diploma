@@ -152,16 +152,6 @@ class SystemComputer:
 
         return c_f
 
-    # @ti.func
-    # def get_s_j_max(self, j, idx):
-        # lambdas = ti.abs(self.get_eigenvals(j, idx))
-
-        # result = double(0.0)
-        # for i in ti.ndrange(lambdas.n):
-        #     result = ti.max(result, lambdas[i])
-
-        # return result
-
     @ti.func
     def get_s_max(self, idx):
         result = vec3(0)
@@ -193,9 +183,7 @@ class SystemComputer:
         D_p = Q(idx_right) - Q(idx)
 
         return Q(idx) + 0.25 * ( (1-self.k)*self.minmod(D_p / D_m)*D_m + (1+self.k)*self.minmod(D_m / D_p)*D_p)
-        # return diff_fd.get_weno(Q, i, idx)
-        # return Q(idx)
-    
+
     @ti.func
     def Q_R(self, Q: ti.template(), i, idx):
         idx_left = idx
@@ -206,8 +194,6 @@ class SystemComputer:
         D_p = Q(idx_right) - Q(idx)
 
         return Q(idx) - 0.25 * ( (1+self.k)*self.minmod(D_p / D_m)*D_m + (1-self.k)*self.minmod(D_m / D_p)*D_p)
-        # return diff_fd.get_weno(Q, i, idx + get_basis(i))
-        # return Q(idx+get_basis(i))
 
     @ti.func
     def HLLD(self, flux_rho: ti.template(), flux_u: ti.template(), flux_B: ti.template(), 
@@ -422,27 +408,6 @@ class SystemComputer:
         Q_B_R = self.Q_R(self.Q_B, i, idx)
         Q_B_L = self.Q_L(self.Q_B, i, idx)
 
-        # yz = get_idx_to_basis(j)
-        # x = j
-        # y = yz[0]
-        # z = yz[1]
-
-        # Delta_u = self.u[idx + get_basis(x)][x] - self.u[idx][x]
-        # Delta_v = ti.min(
-        #     self.u[idx][y] - self.u[idx - get_basis(y)][y],
-        #     self.u[idx + get_basis(y)][y] - self.u[idx][y],
-        #     self.u[idx + get_basis(x)][y] - self.u[idx + get_basis(x) - get_basis(y)][y],
-        #     self.u[idx + get_basis(x) + get_basis(y)][y] - self.u[idx + get_basis(x)][y]
-        # )
-        # Delta_w = ti.min(
-        #     self.u[idx][z] - self.u[idx - get_basis(z)][z],
-        #     self.u[idx + get_basis(z)][z] - self.u[idx][z],
-        #     self.u[idx + get_basis(x)][z] - self.u[idx + get_basis(x) - get_basis(z)][z],
-        #     self.u[idx + get_basis(x) + get_basis(z)][z] - self.u[idx + get_basis(x)][z]
-        # )
-
-        # s_max = self.get_s_j_max(i, idx)
-
         result = self.HLLD(self.rho_computer.flux_convective, 
             self.u_computer.flux_convective, 
             self.B_computer.flux_convective,
@@ -627,7 +592,9 @@ class SystemComputer:
         for idx in ti.grouped(B):
             if not self.check_ghost_idx(idx):
                 # out[idx] = ti.math.pow(ti.cast(rho_new[idx], ti.f32), ti.cast(self.gamma, ti.f32))
-                out[idx] = 0.5*B[idx].norm_sqr()
+                # out[idx] = 0.5*B[idx].norm_sqr()
+
+                out[idx] = div_vec(self.V_B, self.h, idx)
 
     @ti.kernel
     def computeRHO_U(self, out: ti.template()):
@@ -673,13 +640,47 @@ class SystemComputer:
             rho_u[idx] /= rho[idx]
 
     @ti.kernel    
-    def ghosts(self, out: ti.template()):
+    def ghosts_periodic_foo(self, out: ti.template()):
         for idx in ti.grouped(out):
             if self.check_ghost_idx(idx):
                 out[idx] = out[get_ghost_new_idx(self.ghost, self.shape, idx)]
 
-    def ghosts_call(self, out):
-        self.ghosts(out)
+    def ghosts_periodic_foo_call(self, out):
+        self.ghosts_periodic_foo(out)
+
+    @ti.kernel    
+    def ghosts_periodic(self, rho: ti.template(), u: ti.template(), B: ti.template()):
+        for idx in ti.grouped(out):
+            if self.check_ghost_idx(idx):
+                new_idx = get_ghost_new_idx(self.ghost, self.shape, idx)
+                rho[idx] = rho[new_idx]
+                u[idx] = u[new_idx]
+                B[idx] = B[new_idx]
+
+    def ghosts_periodic_call(self, rho, u, B):
+        self.ghosts_periodic(rho, u, B)
+
+    @ti.kernel    
+    def ghosts_wall(self, rho: ti.template(), u: ti.template(), B: ti.template()):
+        for idx in ti.grouped(out):
+            i, j, k = idx
+            if self._check_ghost(self.shape[0], idx[0]):
+                i = 2*self.ghost - (i+1)
+
+            if self._check_ghost(self.shape[1], idx[1]):
+                j = 2*self.ghost - (j+1)
+
+            if self._check_ghost(self.shape[2], idx[2]):
+                k = 2*self.ghost - (k+1)
+
+            idx_new = vec3i([i, j, k])
+
+            rho[idx] = rho[idx_new]
+            u[idx] = -u[idx_new]
+            B[idx] = B[idx_new]
+
+    def ghosts_wall_call(self, rho, u, B):
+        self.ghosts_wall(rho, u, B)
 
     @ti.kernel
     def get_foo(self, foo: ti.template(), out: ti.template()):
