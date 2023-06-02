@@ -31,8 +31,7 @@ class SystemComputer:
         self.les = les
 
         self.filter_size = vec3i([1, 1, 1])
-        # self.k = -(1.0/3.0)
-        self.k = 1
+        self.k = -(1.0/3.0)
 
         self.rho_computer = RhoCompute(self.h, filter_size=self.filter_size, les=les)
         self.u_computer = MomentumCompute(Re, Ma, gamma, self.h, filter_size=self.filter_size, les=les)
@@ -192,8 +191,8 @@ class SystemComputer:
         D_m = Q(idx) - Q(idx_left)
         D_p = Q(idx_right) - Q(idx)
 
-        # return Q(idx) + 0.25 * ( (1-self.k)*self.minmod(D_p / D_m)*D_m + (1+self.k)*self.minmod(D_m / D_p)*D_p)
-        return diff_fd.get_weno(Q, i, idx)
+        return Q(idx) + 0.25 * ( (1-self.k)*self.minmod(D_p / D_m)*D_m + (1+self.k)*self.minmod(D_m / D_p)*D_p)
+        # return diff_fd.get_weno(Q, i, idx)
         # return Q(idx)
     
     @ti.func
@@ -205,8 +204,8 @@ class SystemComputer:
         D_m = Q(idx) - Q(idx_left)
         D_p = Q(idx_right) - Q(idx)
 
-        # return Q(idx) - 0.25 * ( (1+self.k)*self.minmod(D_p / D_m)*D_m + (1-self.k)*self.minmod(D_m / D_p)*D_p)
-        return diff_fd.get_weno(Q, i, idx + get_basis(i))
+        return Q(idx) - 0.25 * ( (1+self.k)*self.minmod(D_p / D_m)*D_m + (1-self.k)*self.minmod(D_m / D_p)*D_p)
+        # return diff_fd.get_weno(Q, i, idx + get_basis(i))
         # return Q(idx+get_basis(i))
 
     @ti.func
@@ -397,43 +396,42 @@ class SystemComputer:
             self.B_computer.flux_convective,
             Q_rho_L, Q_u_L, Q_B_L, Q_rho_R, Q_u_R, Q_B_R, i)
 
-        if ti.static(self.ideal==False or self.hall or(self.les != NonHallLES.DNS)):
-            for j, k in ti.ndrange(2, 2):
-                corner = idx - vec3i(1) + get_dx_st(i, j, k, left=False)
-                V_rho = V_plus_sc(self.V_rho, corner)
-                V_u = V_plus_vec(self.V_B, corner)
-                V_B = V_plus_vec(self.V_B, corner)
+        for j, k in ti.ndrange(2, 2):
+            corner = idx - vec3i(1) + get_dx_st(i, j, k, left=False)
+            V_rho = V_plus_sc(self.V_rho, corner)
+            V_u = V_plus_vec(self.V_B, corner)
+            V_B = V_plus_vec(self.V_B, corner)
 
-                if ti.static(self.ideal==False):
-                    gradU = self.grad_U(corner)
-                    gradB = self.grad_B(corner)
+            if ti.static(self.ideal==False):
+                gradU = self.grad_U(corner)
+                gradB = self.grad_B(corner)
 
-                    result[:, 1] -= 0.25*get_mat_col(
-                        self.u_computer.flux_viscous(V_rho, V_u, V_B, gradU, gradB)
-                        , i)
-                    
-                    result[:, 2] -= 0.25*get_mat_col(
-                        self.B_computer.flux_viscous(V_rho, V_u, V_B, gradU, gradB)
-                        , i)
+                result[:, 1] -= 0.25*get_mat_col(
+                    self.u_computer.flux_viscous(V_rho, V_u, V_B, gradU, gradB)
+                    , i)
+                
+                result[:, 2] -= 0.25*get_mat_col(
+                    self.B_computer.flux_viscous(V_rho, V_u, V_B, gradU, gradB)
+                    , i)
 
-                if ti.static(self.hall):
-                    result[:, 2] -= 0.25*get_mat_col(
-                        self.B_computer.flux_hall(V_rho, V_u, V_B, self.grad_B(corner), self.rot_B(corner))
-                        , i)
-                    
-                if ti.static(self.les != NonHallLES.DNS):
-                    gradU = self.grad_U(corner)
-                    gradB = self.grad_B(corner)
-                    rotU = self.rot_U(corner)
-                    rotB = self.rot_B(corner)
+            if ti.static(self.hall):
+                result[:, 2] -= 0.25*get_mat_col(
+                    self.B_computer.flux_hall(V_rho, V_u, V_B, self.grad_B(corner), self.rot_B(corner))
+                    , i)
+                
+            if ti.static(self.les != NonHallLES.DNS):
+                gradU = self.grad_U(corner)
+                gradB = self.grad_B(corner)
+                rotU = self.rot_U(corner)
+                rotB = self.rot_B(corner)
 
-                    result[:, 1] -= 0.25*get_mat_col(
-                        self.u_computer.flux_les(V_rho, V_u, V_B, gradU, gradB, rotU, rotB)
-                        , i)
+                result[:, 1] -= 0.25*get_mat_col(
+                    self.u_computer.flux_les(V_rho, V_u, V_B, gradU, gradB, rotU, rotB)
+                    , i)
 
-                    result[:, 2] -= 0.25*get_mat_col(
-                        self.B_computer.flux_les(V_rho, V_u, V_B, gradU, gradB, rotU, rotB)
-                        , i)
+                result[:, 2] -= 0.25*get_mat_col(
+                    self.B_computer.flux_les(V_rho, V_u, V_B, gradU, gradB, rotU, rotB)
+                    , i)
         
         return result
 
