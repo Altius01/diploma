@@ -149,7 +149,8 @@ class SystemComputer:
         b_x = (1.0 / self.Ma) * B[j] / pi_rho
         # Sound speed
         _p = self.u_computer.get_pressure(rho)
-        c = (1.0 / self.Ms) * ti.sqrt(self.gamma * _p / rho)
+        c = (1.0 / self.Ms)
+        # c = (1.0 / self.Ms) * ti.sqrt(self.gamma * _p / rho)
         # Alfen speed
         c_a = (1.0 / self.Ma) * B[j] / pi_rho
 
@@ -159,7 +160,7 @@ class SystemComputer:
         c_s = ti.sqrt( 0.5 * (b**2 + c**2) - sq_root)
         c_f = ti.sqrt( 0.5 * (b**2 + c**2) + sq_root)
 
-        return c_f
+        return ti.abs(u[j]) + c_f
         # return ti.Vector([
         #     u[j] + c_f,
         #     u[j] - c_f,
@@ -180,7 +181,8 @@ class SystemComputer:
         b_x = (1.0 / self.Ma) * Q_B[j] / pi_rho
         # Sound speed
         _p = self.u_computer.get_pressure(Q_rho)
-        c = (1.0 / self.Ms) * ti.sqrt(self.gamma * _p / Q_rho)
+        c = (1.0 / self.Ms)
+        # c = (1.0 / self.Ms) * ti.sqrt(self.gamma * _p / Q_rho)
         # Alfen speed
         c_a = (1.0 / self.Ma) * Q_B[j] / pi_rho
 
