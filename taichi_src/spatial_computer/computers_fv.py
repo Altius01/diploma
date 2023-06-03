@@ -286,9 +286,10 @@ class SystemComputer:
         Q_u_hll = (s_R*Q_u_R - s_L*Q_u_L - F_u_R + F_u_L) / (s_R - s_L)
         F_u_hll = (s_R*F_u_L - s_L*F_u_R + s_R*s_L*(Q_u_R - Q_u_L)) / (s_R - s_L)
 
-        Q_B_hll = (s_R*Q_B_R - s_L*Q_B_L - F_b_R + F_b_L) / (s_R - s_L)
+        # Q_B_hll = (s_R*Q_B_R - s_L*Q_B_L - F_b_R + F_b_L) / (s_R - s_L)
 
-        Bx = Q_B_hll[x]
+        # Bx = Q_B_hll[x]
+        Bx = Q_B_L[x]
 
         u_star = F_rho_hll / Q_rho_hll
 
