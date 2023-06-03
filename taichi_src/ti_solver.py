@@ -254,6 +254,8 @@ class TiSolver:
     @ti.kernel
     def sum_fields_u_1_order(self, a: ti.template(), b:ti.template(), c1:double, rho_old: ti.template()):
         for idx in ti.grouped(a):
+              if idx[0] > 250 and idx[0] < 256:
+                    print("idx: ", idx, "Final flux: ", c1*b[idx], c1)
               a[idx] = (a[idx]*rho_old[idx] + c1*b[idx])
 
     @ti.kernel

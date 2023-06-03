@@ -234,13 +234,13 @@ class SystemComputer:
     def Q_R(self, Q: ti.template(), i, idx):
         idx_left = idx
         idx_right = idx + 2*get_basis(i)
-        idx = idx + get_basis(i)
+        # idx = idx + get_basis(i)
 
         D_m = Q(idx) - Q(idx_left)
         D_p = Q(idx_right) - Q(idx)
 
         # return Q(idx) - 0.25 * ( (1+self.k)*self.minmod(D_p / D_m)*D_m + (1-self.k)*self.minmod(D_m / D_p)*D_p)
-        return Q(idx)
+        return Q(idx + get_basis(i))
 
     @ti.func
     def HLLD(self, flux_rho: ti.template(), flux_u: ti.template(), flux_B: ti.template(), 
@@ -358,8 +358,7 @@ class SystemComputer:
         
         if debug:
             # print(idx, " | ", s_L, s_L_star, s_R_star, s_R, " | ", F_rho_C_star, F_u_C_star, F_B_C_star)
-            print(idx, " | ", s_L, s_L_star, s_R_star, s_R, " | ", F_u_C_star, Q_u_R_star, F_u_hll)
-
+            print(idx, " | ", s_L, s_L_star, s_R_star, s_R, " | ", F_u_hll, F_u_L, F_u_R)
 
         if s_L > 0:
             result[0, 0] = F_rho_L
@@ -411,7 +410,7 @@ class SystemComputer:
                     F_R[j, 1] = flux_r[E_idx[1], 2]
 
                     if idx[0] > 250 and idx[0] < 256:
-                        print("idx: ", idx, "flux_l: ", flux_l[:, 2], " flux_r: ", flux_r[:, 2])
+                        print("idx_l: ", idx_l, "idx_r: ", idx_r, "flux_l: ", flux_l[:, 1], " flux_r: ", flux_r[:, 1])
 
                     res -= (flux_r - flux_l) / get_elem_1d(self.h, j)
 
@@ -420,7 +419,7 @@ class SystemComputer:
                 out_B[idx] = res[:, 2]
 
                 if idx[0] > 250 and idx[0] < 256:
-                    print("idx: ", idx, "Final flux: ", res[:, 2])
+                    print("HLLD idx: ", idx, "Final flux: ", res[:, 1])
 
                 E = vec3(0)
                 E[0] = 0.25 * (F_R[2, 1] + F_L[2, 1] - F_L[1, 1] - F_R[1, 1])
@@ -685,9 +684,10 @@ class SystemComputer:
 
             idx_new = vec3i([i, j, k])
 
-            rho[idx] = rho[idx_new]
-            u[idx] = -u[idx_new]
-            B[idx] = B[idx_new]
+            if idx_new[0] != idx[0] or idx_new[1] != idx[1] or idx_new[2] != idx[2]:
+                rho[idx] = rho[idx_new]
+                u[idx] = -u[idx_new]
+                B[idx] = B[idx_new]
 
     def ghosts_wall_call(self, rho, u, B):
         self.ghosts_wall(rho, u, B)
