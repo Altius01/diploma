@@ -291,6 +291,9 @@ class SystemComputer:
         # Bx = Q_B_hll[x]
         Bx = Q_B_L[x]
 
+        if Q_B_L[x] != Q_B_R[x]:
+            print("ALARM!!!")
+
         u_star = F_rho_hll / Q_rho_hll
 
         # ca = (1.0 / self.Ma) * ( ti.abs(Bx) / ti.sqrt(4*ti.math.pi*Q_rho_hll) )
