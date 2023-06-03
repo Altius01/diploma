@@ -114,6 +114,9 @@ class TiSolver:
 
         Logger.log('Start solving.')
 
+        if self.div_cleaning == True:
+            self.update_B_staggered_call()
+            
         while self.current_time < self.config.end_time or (self.current_step % self.config.rw_del != 0):
 
             dT = self.get_cfl()
@@ -228,8 +231,7 @@ class TiSolver:
                     idx_right = idx + get_basis(i)
 
                     if i == 1:
-                        idx_left = idx - get_basis(i)
-                        idx_right = idx
+                        idx_right = idx - get_basis(i)
 
                     result[i] = 0.5*(self.B[0][idx_left][i] + self.B[0][idx_right][i])
 
@@ -245,8 +247,7 @@ class TiSolver:
                     idx_right = idx - get_basis(i)
 
                     if i == 1:
-                        idx_left = idx + get_basis(i)
-                        idx_right = idx
+                        idx_right = idx + get_basis(i)
 
                     result[i] = 0.5*(self.B_staggered[0][idx_left][i] + self.B_staggered[0][idx_right][i])
 
@@ -262,8 +263,7 @@ class TiSolver:
                     idx_right = idx + get_basis(i)
 
                     if i == 1:
-                        idx_left = idx - get_basis(i)
-                        idx_right = idx
+                        idx_right = idx - get_basis(i)
 
                     result[i] = 0.5*(self.B[0][idx_left][i] + self.B[0][idx_right][i])
 
@@ -280,8 +280,7 @@ class TiSolver:
                     idx_right = idx - get_basis(i)
 
                     if i == 1:
-                        idx_left = idx + get_basis(i)
-                        idx_right = idx
+                        idx_right = idx + get_basis(i)
 
                     result[i] = 0.5*(self.B_staggered[0][idx_left][i] + self.B_staggered[0][idx_right][i])
 
@@ -327,9 +326,6 @@ class TiSolver:
         if (self.debug_fv_step):
             print(f'    Les coefs: C:{self.fv_computer.C}, Y:{self.fv_computer.Y}, D: {self.fv_computer.D}')
             print("update_les done!")
-
-        if self.div_cleaning == True:
-            self.update_B_staggered_call()
             
         # for i, c in enumerate(coefs):
             
