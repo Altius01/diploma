@@ -143,6 +143,7 @@ class TiSolver:
 
     @ti.kernel
     def initials_OT(self):
+        sq_pi = ti.sqrt(4*ti.math.pi)
         for idx in ti.grouped(self.rho[0]):
             x, y, z = idx
 
@@ -156,7 +157,7 @@ class TiSolver:
                 -self.B0*ti.math.sin(self.h[1]*y),
                 self.B0*ti.math.sin(2.0*self.h[0]*x),
                 0
-                ])
+                ]) / sq_pi
 
     @ti.kernel
     def initials_SOD(self):
@@ -180,13 +181,14 @@ class TiSolver:
 
     @ti.kernel
     def initials_rand(self):
+        sq_pi = ti.sqrt(4*ti.math.pi)
         for idx in ti.grouped(self.rho[0]):
             x, y, z = idx
             
             _rho = self.RHO0*(1 + 1e-2*ti.randn(dt=double))
             self.rho[0][idx] = _rho
             self.u[0][idx] = self.U0 * (vec3(1) + 1e-2*vec3([ti.randn(dt=double), ti.randn(dt=double), ti.randn(dt=double)]))
-            self.B[0][idx] = self.B0 * (vec3(1) + 1e-2*vec3([ti.randn(dt=double), ti.randn(dt=double), ti.randn(dt=double)]))
+            self.B[0][idx] = self.B0 * (vec3(1) + 1e-2*vec3([ti.randn(dt=double), ti.randn(dt=double), ti.randn(dt=double)])) / sq_pi
 
     def initials_ghosts(self):
         self.ghosts_system(self.rho[0], self.u[0], self.B[0])

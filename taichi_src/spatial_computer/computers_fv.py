@@ -287,7 +287,8 @@ class SystemComputer:
         Q_u_hll = (s_R*Q_u_R - s_L*Q_u_L - F_u_R + F_u_L) / (s_R - s_L)
         F_u_hll = (s_R*F_u_L - s_L*F_u_R + s_R*s_L*(Q_u_R - Q_u_L)) / (s_R - s_L)
 
-        Bx = Q_B_L[x]
+        Q_B_hll = (s_R*Q_B_R - s_L*Q_B_L - F_B_R + F_B_L) / (s_R - s_L)
+        Bx = Q_B_hll[x]
 
         u_star = F_rho_hll / Q_rho_hll
 
@@ -338,11 +339,11 @@ class SystemComputer:
         Q_u_R_star[y] = rho_v_R_star
         Q_u_R_star[z] = rho_w_R_star
 
-        Q_B_L_star = Q_B_L
+        Q_B_L_star = Q_B_hll
         Q_B_L_star[y] = By_L_star
         Q_B_L_star[z] = Bz_L_star
 
-        Q_B_R_star = Q_B_R
+        Q_B_R_star = Q_B_hll
         Q_B_R_star[y] = By_R_star
         Q_B_R_star[z] = Bz_R_star
 
@@ -571,7 +572,6 @@ class SystemComputer:
         Q_B_R = self.Q_R(self.Q_B, i, idx)
         Q_B_L = self.Q_L(self.Q_B, i, idx)
 
-        debug = idx[0] > 250 and idx[0] < 256
         result = self.HLLD(self.rho_computer.flux_convective, 
             self.u_computer.flux_convective, 
             self.B_computer.flux_convective,
