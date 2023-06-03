@@ -117,12 +117,16 @@ class TiSolver:
         self.fv_computer.update_data(self.rho[0], self.p[0], self.u[0], self.B[0])
         lambdas = self.fv_computer.get_cfl_cond()
 
-        denominator = (lambdas[0] / self.h[0] + lambdas[1] / self.h[1] + lambdas[2] / self.h[2])
+        denominator = (
+            lambdas[0] / self.h[0] 
+            + lambdas[1] / self.h[1] 
+            + lambdas[2] / self.h[2]
+        )
 
         if (self.ideal == False):
             denominator += (1.0/self.h[0]**2 + 1.0/self.h[1]**2 + 1.0/self.h[2]**2)
         
-        return self.CFL * (1.0 / (denominator + 1e-6))
+        return self.CFL / (denominator + 1e-6)
 
     @ti.func
     def _check_ghost(self, shape, idx):
@@ -232,9 +236,9 @@ class TiSolver:
                 self.B[0][idx] = result
 
     @ti.kernel
-    def sum_fields(self, a: ti.template(), b:ti.template(), c:ti.template(), d:ti.template(), c1:double, c2:double, c3:double):
+    def sum_fields(self, a: ti.template(), b:ti.template(), c:ti.template(), c1:double, c2:double, c3:double):
         for idx in ti.grouped(a):
-              d[idx] = c1*a[idx] + c2*b[idx] + c3*c[idx]
+              c[idx] = c1*a[idx] + c2*b[idx] + c3*c[idx]
 
     @ti.kernel
     def sum_fields_u(self, a: ti.template(), b:ti.template(), c:ti.template(), 
@@ -269,6 +273,7 @@ class TiSolver:
 
         if self.div_cleaning == True:
             self.update_B_staggered_call()
+            
         # for i, c in enumerate(coefs):
             
         #     i_next = (i + 1) % self.rk_steps
@@ -290,12 +295,12 @@ class TiSolver:
         #         self.fv_computer.ghosts_periodic_foo_call(self.B_staggered[i_k])
 
 
-        #     self.sum_fields(self.rho[0], self.rho[i], self.rho[i_k], self.rho[i_next], c[0], c[1], c[2])
+        #     self.sum_fields(self.rho[i], self.rho[i_k], self.rho[i_next], c[0], c[1], c[2])
 
-        #     self.sum_fields(self.B[0], self.B[i], self.B[i_k], self.B[i_next], c[0], c[1], c[2])
-        #     self.sum_fields(self.B_staggered[0], self.B_staggered[i], self.B_staggered[i_k], self.B_staggered[i_next], c[0], c[1], c[2])
+        #     self.sum_fields(self.B[i], self.B[i_k], self.B[i_next], c[0], c[1], c[2])
+        #     self.sum_fields(self.B_staggered[i], self.B_staggered[i_k], self.B_staggered[i_next], c[0], c[1], c[2])
 
-        #     self.sum_fields_u(self.B[0], self.u[i], self.u[i_k], self.u[i_next], self.rho[i], self.rho[i_next], c[0], c[1], c[2])
+        #     self.sum_fields_u(self.u[i], self.u[i_k], self.u[i_next], self.rho[i], self.rho[i_next], c[0], c[1], c[2])
 
 
         self.fv_computer.update_data(self.rho[0], self.p[0], self.u[0], self.B[0])

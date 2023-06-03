@@ -140,25 +140,24 @@ class SystemComputer:
     def get_eigenvals(self, j, idx):
         u = self.u[idx]
         B = self.B[idx]
-        # p = self.p[idx]
         rho = self.rho[idx]
 
         # pi_rho = ti.sqrt(4 * ti.math.pi * rho)
         pi_rho = ti.sqrt(rho)
 
-        b = (1 / self.Ma) * B.norm() / pi_rho
-        b_x = (1 / self.Ma) * B[j] / pi_rho
+        b = (1.0 / self.Ma) * B.norm() / pi_rho
+        b_x = (1.0 / self.Ma) * B[j] / pi_rho
         # Sound speed
-        _p = ti.pow(rho, self.gamma)
-        c = (1 / self.Ms) * ti.sqrt(self.gamma * _p / rho)
+        _p = self.u_computer.get_pressure(rho)
+        c = (1.0 / self.Ms) * ti.sqrt(self.gamma * _p / rho)
         # Alfen speed
-        c_a = (1 / self.Ma) * B[j] / pi_rho
+        c_a = (1.0 / self.Ma) * B[j] / pi_rho
 
-        sq_root = ti.sqrt((b + c)**2 - 4 * b_x * c)
+        sq_root = ti.sqrt((b**2 + c**2)**2 - 4 * b_x**2 * c**2)
 
         # Magnetosonic wawes
-        c_s = ti.sqrt( 0.5 * (b + c) - sq_root)
-        c_f = ti.sqrt( 0.5 * (b + c) + sq_root)
+        c_s = ti.sqrt( 0.5 * (b**2 + c**2) - sq_root)
+        c_f = ti.sqrt( 0.5 * (b**2 + c**2) + sq_root)
 
         return c_f
         # return ti.Vector([
@@ -171,23 +170,24 @@ class SystemComputer:
         #     0,
         # ])
 
+    
     @ti.func
     def get_c_fast(self, Q_rho, Q_u, Q_B, j):
         # pi_rho = ti.sqrt(4 * ti.math.pi * Q_rho)
         pi_rho = ti.sqrt(Q_rho)
 
-        b = (1 / self.Ma) * Q_B.norm() / pi_rho
-        b_x = (1 / self.Ma) * Q_B[j] / pi_rho
+        b = (1.0 / self.Ma) * Q_B.norm() / pi_rho
+        b_x = (1.0 / self.Ma) * Q_B[j] / pi_rho
         # Sound speed
-        _p = ti.pow(Q_rho, self.gamma)
-        c = (1 / self.Ms) * ti.sqrt(self.gamma * _p / Q_rho)
+        _p = self.u_computer.get_pressure(Q_rho)
+        c = (1.0 / self.Ms) * ti.sqrt(self.gamma * _p / Q_rho)
         # Alfen speed
-        c_a = (1 / self.Ma) * Q_B[j] / pi_rho
+        c_a = (1.0 / self.Ma) * Q_B[j] / pi_rho
 
-        sq_root = ti.sqrt((b + c)**2 - 4 * b_x * c)
+        sq_root = ti.sqrt((b**2 + c**2)**2 - 4 * b_x**2 * c**2)
 
         # Magnetosonic wawes
-        c_f = ti.sqrt( 0.5 * (b + c) + sq_root)
+        c_f = ti.sqrt( 0.5 * (b**2 + c**2) + sq_root)
 
         return c_f
 
@@ -238,7 +238,7 @@ class SystemComputer:
         D_p = Q(idx_right) - Q(idx)
 
         # return Q(idx) - 0.25 * ( (1+self.k)*self.minmod(D_p / D_m)*D_m + (1-self.k)*self.minmod(D_m / D_p)*D_p)
-        return Q(idx_right)
+        return Q(idx)
 
     @ti.func
     def HLLD(self, flux_rho: ti.template(), flux_u: ti.template(), flux_B: ti.template(), 
@@ -246,7 +246,6 @@ class SystemComputer:
 
         c_f_L = self.get_c_fast(Q_rho_L, Q_u_L, Q_B_L, i)
         c_f_R = self.get_c_fast(Q_rho_R, Q_u_R, Q_B_R, i)
-        c_f_max = ti.max(c_f_L, c_f_R)
 
         yz = get_idx_to_basis(i)
         x = i
@@ -261,20 +260,14 @@ class SystemComputer:
         v_L = Q_u_L[y] / Q_rho_L
         w_L = Q_u_L[z] / Q_rho_L
 
-        # Bx_R = Q_B_R[x]
         By_R = Q_B_R[y]
         Bz_R = Q_B_R[z]
 
-        # Bx_L = Q_B_L[x]
         By_L = Q_B_L[y]
         Bz_L = Q_B_L[z]
-        
 
-        # p_T_L = ti.pow(Q_rho_L, self.gamma) + Q_B_L.norm_sqr() / (2.0 * self.Ma**2)
-        # p_T_R = ti.pow(Q_rho_R, self.gamma) + Q_B_R.norm_sqr() / (2.0 * self.Ma**2)
-
-        s_L = ti.min(0, ti.min(u_L, u_R) - c_f_max)
-        s_R = ti.max(0, ti.max(u_L, u_R) + c_f_max)
+        s_L = ti.min(u_L - c_f_L, u_R - c_f_R)
+        s_R = ti.min(u_L + c_f_L, u_R + c_f_R)
 
         F_rho_L = get_vec_col(flux_rho(Q_rho_L, Q_u_L, Q_B_L), i)
         F_rho_R = get_vec_col(flux_rho(Q_rho_R, Q_u_R, Q_B_R), i)
@@ -321,11 +314,11 @@ class SystemComputer:
             rho_w_L_star = Q_rho_hll * w_L - (1.0 / self.Ma**2) * Bx*Bz_L * (u_star - u_L) / ((s_L - s_L_star)*(s_L - s_R_star))
             rho_w_R_star = Q_rho_hll * w_R - (1.0 / self.Ma**2) * Bx*Bz_R * (u_star - u_R) / ((s_R - s_L_star)*(s_R - s_R_star))
 
-            By_L_star = (By_L / Q_rho_hll) *( (Q_rho_L*(s_L - u_L)**2 - Bx**2) / ((s_L - s_L_star)*(s_L - s_R_star)))
-            By_R_star = (By_R / Q_rho_hll) *( (Q_rho_R*(s_R - u_R)**2 - Bx**2) / ((s_R - s_L_star)*(s_R - s_R_star)))
+            By_L_star = (By_L / Q_rho_hll) *( (Q_rho_L*(s_L - u_L)**2 - (1.0 / self.Ma**2) * Bx**2) / ((s_L - s_L_star)*(s_L - s_R_star)))
+            By_R_star = (By_R / Q_rho_hll) *( (Q_rho_R*(s_R - u_R)**2 - (1.0 / self.Ma**2) * Bx**2) / ((s_R - s_L_star)*(s_R - s_R_star)))
 
-            Bz_L_star = (Bz_L / Q_rho_hll) *( (Q_rho_L*(s_L - u_L)**2 - Bx**2) / ((s_L - s_L_star)*(s_L - s_R_star)))
-            Bz_R_star = (Bz_R / Q_rho_hll) *( (Q_rho_R*(s_R - u_R)**2 - Bx**2) / ((s_R - s_L_star)*(s_R - s_R_star)))
+            Bz_L_star = (Bz_L / Q_rho_hll) *( (Q_rho_L*(s_L - u_L)**2 - (1.0 / self.Ma**2) * Bx**2) / ((s_L - s_L_star)*(s_L - s_R_star)))
+            Bz_R_star = (Bz_R / Q_rho_hll) *( (Q_rho_R*(s_R - u_R)**2 - (1.0 / self.Ma**2) * Bx**2) / ((s_R - s_L_star)*(s_R - s_R_star)))
 
         Xi = ti.sqrt(Q_rho_hll)*ti.math.sign(Bx)
         rho_v_C_star = 0.5*(rho_v_L_star + rho_v_R_star) + (0.5/self.Ma**2)*(By_R_star - By_L_star)*Xi
@@ -343,13 +336,11 @@ class SystemComputer:
         Q_u_R_star[y] = rho_v_R_star
         Q_u_R_star[z] = rho_w_R_star
 
-        Q_B_L_star = Q_B_L
-        Q_B_L_star[x] = Bx
+        Q_B_L_star = Q_B_hll
         Q_B_L_star[y] = By_L_star
         Q_B_L_star[z] = Bz_L_star
 
-        Q_B_R_star = Q_B_R
-        Q_B_R_star[x] = Bx
+        Q_B_R_star = Q_B_hll
         Q_B_R_star[y] = By_R_star
         Q_B_R_star[z] = Bz_R_star
 
@@ -365,41 +356,28 @@ class SystemComputer:
         F_B_C_star[z] = Bz_C_star*u_star - (Bx*rho_w_C_star/Q_rho_hll)
         
         if debug:
-            print(idx, s_L, s_L_star, s_R_star, s_R,  F_b_L + s_L*(Q_B_L_star - Q_B_L), F_B_C_star, u_star, F_rho_hll, Q_rho_hll)
-        if Bx != 0:
-            if s_L > 0:
-                result[0, 0] = F_rho_L
-                result[:, 1] = F_u_L
-                result[:, 2] = F_b_L
-            elif s_L_star > 0:
-                result[0, 0] = F_rho_L + s_L*(Q_rho_hll - Q_rho_L)
-                result[:, 1] = F_u_L + s_L*(Q_u_L_star - Q_u_L)
-                result[:, 2] = F_b_L + s_L*(Q_B_L_star - Q_B_L)
-            elif s_R_star > 0:
-                result[0, 0] = F_rho_C_star
-                result[:, 1] = F_u_C_star
-                result[:, 2] = F_B_C_star
-            elif s_R > 0:
-                result[0, 0] = F_rho_R + s_R*(Q_rho_hll - Q_rho_R)
-                result[:, 1] = F_u_R + s_R*(Q_u_R_star - Q_u_R)
-                result[:, 2] = F_b_R + s_R*(Q_B_R_star - Q_B_R)
-            else:
-                result[0, 0] = F_rho_R
-                result[:, 1] = F_u_R
-                result[:, 2] = F_b_R
+            print(idx, s_L, s_L_star, s_R_star, s_R, c_f_L, c_f_R)
+
+        if s_L > 0:
+            result[0, 0] = F_rho_L
+            result[:, 1] = F_u_L
+            result[:, 2] = F_b_L
+        elif s_L_star > 0:
+            result[0, 0] = F_rho_L + s_L*(Q_rho_hll - Q_rho_L)
+            result[:, 1] = F_u_L + s_L*(Q_u_L_star - Q_u_L)
+            result[:, 2] = F_b_L + s_L*(Q_B_L_star - Q_B_L)
+        elif s_R_star > 0:
+            result[0, 0] = F_rho_C_star
+            result[:, 1] = F_u_C_star
+            result[:, 2] = F_B_C_star
+        elif s_R > 0:
+            result[0, 0] = F_rho_R + s_R*(Q_rho_hll - Q_rho_R)
+            result[:, 1] = F_u_R + s_R*(Q_u_R_star - Q_u_R)
+            result[:, 2] = F_b_R + s_R*(Q_B_R_star - Q_B_R)
         else:
-            if s_L > 0:
-                result[0, 0] = F_rho_L
-                result[:, 1] = F_u_L
-                result[:, 2] = F_b_L
-            elif s_R > 0:
-                result[0, 0] = F_rho_C_star
-                result[:, 1] = F_u_C_star
-                result[:, 2] = F_B_C_star
-            else:
-                result[0, 0] = F_rho_R
-                result[:, 1] = F_u_R
-                result[:, 2] = F_b_R
+            result[0, 0] = F_rho_R
+            result[:, 1] = F_u_R
+            result[:, 2] = F_b_R
 
         return result
 
@@ -792,8 +770,13 @@ class MomentumCompute(Compute):
         self.gamma = gamma
 
     @ti.func
+    def get_pressure(self, rho):
+        # return ti.pow(rho, self.gamma)
+        return rho
+
+    @ti.func
     def flux_convective(self, Q_rho, Q_u, Q_B):
-        p = ti.pow(Q_rho, self.gamma)
+        p = self.get_pressure(Q_rho)
         BB = Q_B.outer_product(Q_B)
         rho_UU = Q_u.outer_product(Q_u) / Q_rho
         return (
