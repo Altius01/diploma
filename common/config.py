@@ -35,6 +35,7 @@ class Config:
 
     Re = 1e3
     Rem = 1e3
+    nu_0 = 1.0
     delta_hall = 1e1
     Ma = 1e0
     Ms = 1e0
@@ -46,7 +47,7 @@ class Config:
     CFL = 0.9
 
     models = ['DNS', 'SMAGORINSKY', 'CROSS_HELICITY']
-    initials = ['OT', 'RAND']
+    initials = ['OT', 'RAND', 'SOD']
 
     def __init__(self, file_path=Path.cwd() / "config.json"):
         self.file_path = file_path
@@ -74,6 +75,7 @@ class Config:
 
     "Re": 1000.0,
     "Rem": 100.0,
+    "nu_0": 1.0,
     "delta_hall": 1.0,
     "Ma": 1.0,
     "Ms": 1.0,
@@ -127,7 +129,7 @@ class Config:
 
             self.model = data.get('model', 'DNS')
 
-            self.initials = data.get("initials", "ot")
+            self.initials = data.get("initials", "OT")
 
             self.RHO0 = data.get("RHO0", 1.0)
             self.U0 = data.get("U0", 1.0)
@@ -135,6 +137,7 @@ class Config:
 
             self.Re = data.get("Re", 1000)
             self.Rem = data.get("Rem", 100)
+            self.nu_0 = data.get("nu_0", 1.0)
             self.delta_hall = data.get("delta_hall", 1.0)
             self.Ma = data.get("Ma", 1.0)
             self.Ms = data.get("Ms", 0.2)

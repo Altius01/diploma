@@ -140,43 +140,43 @@ class SystemComputer:
 
         return result
 
-    @ti.func
-    def get_eigenvals(self, j, idx):
-        u = self.u[idx]
-        B = self.B[idx]
-        rho = self.rho[idx]
+    # @ti.func
+    # def get_eigenvals(self, j, idx):
+    #     u = self.u[idx]
+    #     B = self.B[idx]
+    #     rho = self.rho[idx]
 
-        # pi_rho = ti.sqrt(4 * ti.math.pi * rho)
-        pi_rho = ti.sqrt(rho)
+    #     # pi_rho = ti.sqrt(4 * ti.math.pi * rho)
+    #     pi_rho = ti.sqrt(rho)
 
-        b = (1.0 / self.Ma) * B.norm() / pi_rho
-        b_x = (1.0 / self.Ma) * B[j] / pi_rho
-        # Sound speed
-        _p = self.u_computer.get_pressure(rho)
-        c = self.get_sound_speed(_p, rho)
-        # Alfen speed
-        c_a = (1.0 / self.Ma) * B[j] / pi_rho
+    #     b = (1.0 / self.Ma) * B.norm() / pi_rho
+    #     b_x = (1.0 / self.Ma) * B[j] / pi_rho
+    #     # Sound speed
+    #     _p = self.u_computer.get_pressure(rho)
+    #     c = self.get_sound_speed(_p, rho)
+    #     # Alfen speed
+    #     c_a = (1.0 / self.Ma) * B[j] / pi_rho
 
-        sq_root = ti.sqrt((b**2 + c**2)**2 - 4 * b_x**2 * c**2)
+    #     sq_root = ti.sqrt((b**2 + c**2)**2 - 4 * b_x**2 * c**2)
 
-        # Magnetosonic wawes
-        c_s = ti.sqrt( 0.5 * (b**2 + c**2) - sq_root)
-        c_f = ti.sqrt( 0.5 * (b**2 + c**2) + sq_root)
+    #     # Magnetosonic wawes
+    #     c_s = ti.sqrt( 0.5 * (b**2 + c**2) - sq_root)
+    #     c_f = ti.sqrt( 0.5 * (b**2 + c**2) + sq_root)
 
-        return ti.max(
-            ti.abs(u[j]) + c_f,
-            ti.abs(u[j]) + c_s,
-            ti.abs(u[j]) + c_a
-        )
-        # return ti.Vector([
-        #     u[j] + c_f,
-        #     u[j] - c_f,
-        #     u[j] + c_s,
-        #     u[j] - c_s,
-        #     u[j] + c_a,
-        #     u[j] - c_a,
-        #     0,
-        # ])
+    #     return ti.max(
+    #         ti.abs(u[j]) + c_f,
+    #         ti.abs(u[j]) + c_s,
+    #         ti.abs(u[j]) + c_a
+    #     )
+    #     # return ti.Vector([
+    #     #     u[j] + c_f,
+    #     #     u[j] - c_f,
+    #     #     u[j] + c_s,
+    #     #     u[j] - c_s,
+    #     #     u[j] + c_a,
+    #     #     u[j] - c_a,
+    #     #     0,
+    #     # ])
 
     @ti.func
     def get_sound_speed(self, p, rho):
@@ -203,24 +203,24 @@ class SystemComputer:
         return c_f
 
     @ti.func
-    def get_s_max(self, idx):
-        result = vec3(0)
-
-        result[0] = self.get_eigenvals(0, idx)
-
-        if self.dimensions > 1:
-            result[1] = self.get_eigenvals(1, idx)
+    def get_s_j_max(self, j, idx):
+        u = self.u[idx]
+        B = self.B[idx]
+        rho = self.rho[idx]
         
-        if self.dimensions > 2:
-            result[2] = self.get_eigenvals(2, idx)
-
-        return result
+        return ti.abs(u[j]) + self.get_c_fast(rho, u, B, j)
 
     @ti.kernel
     def get_cfl_cond(self) -> vec3:
         result = vec3(0)
         for idx in ti.grouped(self.rho):
-            result = ti.max(self.get_s_max(idx), result)
+            result[0] = ti.max(result[0], self.get_s_j_max(0, idx))
+
+            if self.dimensions > 1:
+                result[1] = ti.max(result[1], self.get_s_j_max(1, idx))
+            
+            if self.dimensions > 2:
+                result[2] = ti.max(result[2], self.get_s_j_max(2, idx))
 
         return result
     
@@ -656,8 +656,8 @@ class SystemComputer:
         for idx in ti.grouped(out):
             if not self.check_ghost_idx(idx):
                 # out[idx] = ti.math.pow(ti.cast(rho_new[idx], ti.f32), ti.cast(self.gamma, ti.f32))
-                # out[idx] = 0.5*B[idx].norm_sqr()
-                out[idx] = self.div_vec(foo_B, self.h, idx)
+                out[idx] = 0.5*B[idx].norm_sqr()
+                # out[idx] = self.div_vec(foo_B, self.h, idx)
 
     @ti.kernel
     def compute_U(self, rho_u: ti.template(), rho: ti.template()):

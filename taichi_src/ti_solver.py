@@ -18,6 +18,7 @@ class TiSolver:
         self.eps_p = 1e-5
         self.h = [0, 0, 0]
         self.Re = config.Re
+        self.nu_0 = config.nu_0
         self.Rem = config.Rem
         self.delta_hall = config.delta_hall
         self.Ma = config.Ma
@@ -28,6 +29,7 @@ class TiSolver:
 
         self.rk_steps = 3
         self.les_model = NonHallLES(config.model)
+        self.initials = Initials(config.initials)
         self.ideal = config.ideal
         self.hall = config.hall
 
@@ -99,9 +101,12 @@ class TiSolver:
         if self.config.start_step == 0:
             Logger.log('Start solve initials.')
 
-            # self.initials_rand()
-            self.initials_OT()
-            # self.initials_SOD()
+            if self.initials == Initials.RAND:
+                self.initials_rand()
+            elif self.initials == Initials.OT:
+                self.initials_OT()
+            elif self.initials == Initials.SOD:
+                self.initials_SOD()
 
             self.initials_ghosts()
             self.save_file(self.current_step)
@@ -134,14 +139,14 @@ class TiSolver:
         self.fv_computer.update_data(self.rho[0], self.p[0], self.u[0], self.B[0])
         lambdas = self.fv_computer.get_cfl_cond()
 
-        denominator = 2.0*(
+        denominator = (
             lambdas[0] / self.h[0] 
             + lambdas[1] / self.h[1] 
             + lambdas[2] / self.h[2]
         )
 
         if (self.ideal == False):
-            denominator += (1.0/self.h[0]**2 + 1.0/self.h[1]**2 + 1.0/self.h[2]**2)
+            denominator += 2*((4.0/3.0)*(self.Rem/self.Re) + 1.0)*self.nu_0*(1.0/self.h[0]**2 + 1.0/self.h[1]**2 + 1.0/self.h[2]**2)
         
         return self.CFL / (denominator + 1e-6)
 

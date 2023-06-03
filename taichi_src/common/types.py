@@ -45,3 +45,4 @@ class NonHallLES(Enum):
 class Initials(Enum):
     OT = "OT"
     RAND = "RAND"
+    SOD = "SOD"
