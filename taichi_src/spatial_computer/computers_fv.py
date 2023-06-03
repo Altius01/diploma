@@ -67,6 +67,7 @@ class SystemComputer:
             self.V_plus_vec = V_plus_vec_2D
 
             self.flux_HLLD_right = self.flux_HLLD_right_2D
+            self.computeB_staggered = self.computeB_staggered_2D
         elif self.dimensions == 3:
             self.grad_sc = grad_sc_3D
             self.grad_vec = grad_vec_3D
@@ -77,6 +78,7 @@ class SystemComputer:
             self.V_plus_vec = V_plus_vec_3D
 
             self.flux_HLLD_right = self.flux_HLLD_right_3D
+            self.computeB_staggered = self.computeB_staggered_3D
 
     @ti.func
     def Q_rho(self, idx):
@@ -131,8 +133,10 @@ class SystemComputer:
         result = False
 
         result = result or self._check_ghost(self.shape[0], self.ghost[0], idx[0])
-        result = result or self._check_ghost(self.shape[1], self.ghost[1], idx[1])
-        result = result or self._check_ghost(self.shape[2], self.ghost[2], idx[2])
+        if self.dimensions > 1:
+            result = result or self._check_ghost(self.shape[1], self.ghost[1], idx[1])
+        if self.dimensions > 2:
+            result = result or self._check_ghost(self.shape[2], self.ghost[2], idx[2])
 
         return result
 
@@ -271,6 +275,7 @@ class SystemComputer:
 
         s_L = ti.min(u_L - c_f_L, u_R - c_f_R)
         s_R = ti.min(u_L + c_f_L, u_R + c_f_R)
+        # s_R = ti.max(u_L + c_f_L, u_R + c_f_R)
 
         F_rho_L = get_vec_col(flux_rho(Q_rho_L, Q_u_L, Q_B_L), i)
         F_rho_R = get_vec_col(flux_rho(Q_rho_R, Q_u_R, Q_B_R), i)
@@ -287,8 +292,8 @@ class SystemComputer:
         Q_u_hll = (s_R*Q_u_R - s_L*Q_u_L - F_u_R + F_u_L) / (s_R - s_L)
         F_u_hll = (s_R*F_u_L - s_L*F_u_R + s_R*s_L*(Q_u_R - Q_u_L)) / (s_R - s_L)
 
-        Q_B_hll = (s_R*Q_B_R - s_L*Q_B_L - F_B_R + F_B_L) / (s_R - s_L)
-        Bx = Q_B_hll[x]
+        Q_B_hll = (s_R*Q_B_R - s_L*Q_B_L - F_b_R + F_b_L) / (s_R - s_L)
+        Bx = Q_B_L[x]
 
         u_star = F_rho_hll / Q_rho_hll
 
@@ -339,11 +344,11 @@ class SystemComputer:
         Q_u_R_star[y] = rho_v_R_star
         Q_u_R_star[z] = rho_w_R_star
 
-        Q_B_L_star = Q_B_hll
+        Q_B_L_star = Q_B_L
         Q_B_L_star[y] = By_L_star
         Q_B_L_star[z] = Bz_L_star
 
-        Q_B_R_star = Q_B_hll
+        Q_B_R_star = Q_B_R
         Q_B_R_star[y] = By_R_star
         Q_B_R_star[z] = Bz_R_star
 
@@ -414,13 +419,14 @@ class SystemComputer:
                 out_B[idx] = res[:, 2]
 
                 E = vec3(0)
-                E[0] = 0.25 * (F_R[2, 1] + F_L[2, 1] - F_L[1, 1] - F_R[1, 1])
-                E[1] = 0.25 * (F_R[0, 1] + F_L[0, 1] - F_L[2, 0] - F_R[2, 0])
+                if self.dimensions == 3:
+                    E[0] = 0.25 * (F_R[2, 1] + F_L[2, 1] - F_L[1, 1] - F_R[1, 1])
+                    E[1] = 0.25 * (F_R[0, 1] + F_L[0, 1] - F_L[2, 0] - F_R[2, 0])
                 E[2] = 0.25 * (F_R[1, 0] + F_L[1, 0] - F_L[0, 0] - F_R[0, 0])
                 out_E[idx] = E
 
     @ti.kernel
-    def computeB_staggered(self, E: ti.template(), B_stag_out: ti.template()):
+    def computeB_staggered_3D(self, E: ti.template(), B_stag_out: ti.template()):
         for idx in ti.grouped(self.rho):
             if not self.check_ghost_idx(idx):
 
@@ -428,10 +434,11 @@ class SystemComputer:
 
                 ijk = vec3i([i, j, k])
                 ijm1k = vec3i([i, j-1, k])
-                ijkm1 = vec3i([i, j, k-1])
-                ijm1km1 = vec3i([i, j-1, k-1])
                 im1jm1k = vec3i([i-1, j-1, k])
-                im1jk = vec3i([i-1, j, k])                
+                im1jk = vec3i([i-1, j, k])
+                
+                ijkm1 = vec3i([i, j, k-1])
+                ijm1km1 = vec3i([i, j-1, k-1])               
 
                 res = vec3(0)
                 res[0] = (
@@ -449,7 +456,29 @@ class SystemComputer:
                     + self.h[1]*(E[ijk][1] - E[im1jk][1])
                 ) / (self.h[0]*self.h[1])
 
-                B_stag_out[idx] = res
+                B_stag_out[idx] = -res
+
+    @ti.kernel
+    def computeB_staggered_2D(self, E: ti.template(), B_stag_out: ti.template()):
+        for idx in ti.grouped(self.rho):
+            if not self.check_ghost_idx(idx):
+
+                i, j, k = idx
+
+                ijk = vec3i([i, j, k])
+                ijm1k = vec3i([i, j-1, k])
+                im1jm1k = vec3i([i-1, j-1, k])            
+
+                res = vec3(0)
+                res[0] = (
+                    (E[ijk][2] - E[ijm1k][2])
+                    ) / (self.h[1])
+
+                res[1] = (
+                    (E[im1jm1k][2] - E[ijm1k][2])
+                ) / (self.h[0])
+
+                B_stag_out[idx] = -res
 
     @ti.func
     def flux_HLLD_right_3D(self, i, idx):
@@ -617,13 +646,12 @@ class SystemComputer:
         return result
 
     @ti.kernel
-    def computeP(self, out: ti.template(), B: ti.template()):
-        for idx in ti.grouped(B):
+    def computeP(self, out: ti.template(), foo_B: ti.template()):
+        for idx in ti.grouped(out):
             if not self.check_ghost_idx(idx):
                 # out[idx] = ti.math.pow(ti.cast(rho_new[idx], ti.f32), ti.cast(self.gamma, ti.f32))
                 # out[idx] = 0.5*B[idx].norm_sqr()
-
-                out[idx] = self.div_vec(self.V_B, self.h, idx)
+                out[idx] = self.div_vec(foo_B, self.h, idx)
 
     @ti.kernel
     def compute_U(self, rho_u: ti.template(), rho: ti.template()):

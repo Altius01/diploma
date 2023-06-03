@@ -59,7 +59,19 @@ def V_plus_sc_3D(foo: ti.template(), idx):
     return result / 8.0
 
 @ti.func
-def get_dx_st_1D(diff_axe, i, j, left=True):
+def get_dx_st_1D(diff_axe, i, j, left):
+    result = vec3i(0)
+    a = 0
+
+    if left == False:
+        a = 1
+
+    result = vec3i([a, 0, 0])
+
+    return result
+
+@ti.func
+def get_dx_st_2D(diff_axe, i, j, left):
     result = vec3i(0)
     a = 0
 
@@ -74,22 +86,7 @@ def get_dx_st_1D(diff_axe, i, j, left=True):
     return result
 
 @ti.func
-def get_dx_st_2D(diff_axe, i, j, left=True):
-    result = vec3i(0)
-    a = 0
-
-    if left == False:
-        a = 1
-
-    if diff_axe == 0:
-        result = vec3i([a, i, 0])
-    elif diff_axe == 1:
-        result = vec3i([i, a, 0])
-
-    return result
-
-@ti.func
-def get_dx_st_3D(diff_axe, i, j, left=True):
+def get_dx_st_3D(diff_axe, i, j, left):
     result = vec3i(0)
     a = 0
 
@@ -109,8 +106,8 @@ def get_dx_st_3D(diff_axe, i, j, left=True):
 def dx_sc_1D(foo: ti.template(), diff_axe, h, idx):
     result = double(0.0)
 
-    new_idx_l = idx + get_dx_st_1D(diff_axe, 0, 0, left=True)
-    new_idx_r = idx + get_dx_st_1D(diff_axe, 0, 0, left=False)
+    new_idx_l = idx + get_dx_st_1D(diff_axe, 0, 0, True)
+    new_idx_r = idx + get_dx_st_1D(diff_axe, 0, 0, False)
 
     result += ( foo(new_idx_r) - foo(new_idx_l) ) / h
 
@@ -121,8 +118,8 @@ def dx_sc_2D(foo: ti.template(), diff_axe, h, idx):
     result = double(0.0)
 
     for i in (ti.ndrange(2)):
-        new_idx_l = idx + get_dx_st_2D(diff_axe, i, 0, left=True)
-        new_idx_r = idx + get_dx_st_2D(diff_axe, i, 0, left=False)
+        new_idx_l = idx + get_dx_st_2D(diff_axe, i, 0, True)
+        new_idx_r = idx + get_dx_st_2D(diff_axe, i, 0, False)
 
         result += ( foo(new_idx_r) - foo(new_idx_l) ) / h
 
@@ -133,8 +130,8 @@ def dx_sc_3D(foo: ti.template(), diff_axe, h, idx):
     result = double(0.0)
 
     for i, j in (ti.ndrange(2, 2)):
-        new_idx_l = idx + get_dx_st_3D(diff_axe, i, j, left=True)
-        new_idx_r = idx + get_dx_st_3D(diff_axe, i, j, left=False)
+        new_idx_l = idx + get_dx_st_3D(diff_axe, i, j, True)
+        new_idx_r = idx + get_dx_st_3D(diff_axe, i, j, False)
 
         result += ( foo(new_idx_r) - foo(new_idx_l) ) / h
 
@@ -144,8 +141,8 @@ def dx_sc_3D(foo: ti.template(), diff_axe, h, idx):
 def dx_vec_1D(foo: ti.template(), axe, diff_axe, h, idx):
     result = double(0.0)
 
-    new_idx_l = idx + get_dx_st_1D(diff_axe, 0, 0, left=True)
-    new_idx_r = idx + get_dx_st_1D(diff_axe, 0, 0, left=False)
+    new_idx_l = idx + get_dx_st_1D(diff_axe, 0, 0, True)
+    new_idx_r = idx + get_dx_st_1D(diff_axe, 0, 0, False)
     result += ( get_elem_1d(foo(new_idx_r), axe) 
         - get_elem_1d(foo(new_idx_l), axe) ) / h
 
@@ -156,8 +153,8 @@ def dx_vec_2D(foo: ti.template(), axe, diff_axe, h, idx):
     result = double(0.0)
 
     for i in (ti.ndrange(2)):
-        new_idx_l = idx + get_dx_st_2D(diff_axe, i, 0, left=True)
-        new_idx_r = idx + get_dx_st_2D(diff_axe, i, 0, left=False)
+        new_idx_l = idx + get_dx_st_2D(diff_axe, i, 0, True)
+        new_idx_r = idx + get_dx_st_2D(diff_axe, i, 0, False)
         result += ( get_elem_1d(foo(new_idx_r), axe) 
             - get_elem_1d(foo(new_idx_l), axe) ) / h
 
@@ -168,8 +165,8 @@ def dx_vec_3D(foo: ti.template(), axe, diff_axe, h, idx):
     result = double(0.0)
 
     for i, j in (ti.ndrange(2, 2)):
-        new_idx_l = idx + get_dx_st_3D(diff_axe, i, j, left=True)
-        new_idx_r = idx + get_dx_st_3D(diff_axe, i, j, left=False)
+        new_idx_l = idx + get_dx_st_3D(diff_axe, i, j, True)
+        new_idx_r = idx + get_dx_st_3D(diff_axe, i, j, False)
         result += ( get_elem_1d(foo(new_idx_r), axe) 
             - get_elem_1d(foo(new_idx_l), axe) ) / h
 
@@ -206,8 +203,8 @@ def grad_sc_3D(foo: ti.template(), h: ti.template(), idx):
 def grad_vec_1D(foo: ti.template(), h: ti.template(), idx):
     result = mat3x3(0)
 
-    for i, j in ti.static(ti.ndrange(1, result.m)):
-        result[i, j] = dx_vec_1D(foo, j, 0, h[i], idx)
+    for i, j in (ti.ndrange(1, result.m)):
+        result[i, j] = dx_vec_1D(foo, j, 0, get_elem_1d(h, i), idx)
 
     return result
 
@@ -215,8 +212,8 @@ def grad_vec_1D(foo: ti.template(), h: ti.template(), idx):
 def grad_vec_2D(foo: ti.template(), h: ti.template(), idx):
     result = mat3x3(0)
 
-    for i, j in ti.static(ti.ndrange(2, result.m)):
-        result[i, j] = dx_vec_2D(foo, j, i, h[i], idx)
+    for i, j in (ti.ndrange(2, result.m)):
+        result[i, j] = dx_vec_2D(foo, j, i, get_elem_1d(h, i), idx)
 
     return result
 
@@ -224,8 +221,8 @@ def grad_vec_2D(foo: ti.template(), h: ti.template(), idx):
 def grad_vec_3D(foo: ti.template(), h: ti.template(), idx):
     result = mat3x3(0)
 
-    for i, j in ti.static(ti.ndrange(3, result.m)):
-        result[i, j] = dx_vec_3D(foo, j, i, h[i], idx)
+    for i, j in (ti.ndrange(3, result.m)):
+        result[i, j] = dx_vec_3D(foo, j, i, get_elem_1d(h, i), idx)
 
     return result
 
@@ -241,8 +238,8 @@ def div_vec_1D(foo: ti.template(), h: ti.template(), idx):
 def div_vec_2D(foo: ti.template(), h: ti.template(), idx):
     result = double(0.0)
 
-    for i in ti.static(ti.ndrange(2)):
-        result += dx_vec_2D(foo, i, i, h[i], idx)
+    for i in ti.ndrange(2):
+        result += dx_vec_2D(foo, i, i, get_elem_1d(h, i), idx)
 
     return result
 
@@ -250,8 +247,8 @@ def div_vec_2D(foo: ti.template(), h: ti.template(), idx):
 def div_vec_3D(foo: ti.template(), h: ti.template(), idx):
     result = double(0.0)
 
-    for i in ti.static(ti.ndrange(vec3.n)):
-        result += dx_vec_3D(foo, i, i, h[i], idx)
+    for i in (ti.ndrange(vec3.n)):
+        result += dx_vec_3D(foo, i, i, get_elem_1d(h, i), idx)
 
     return result
 
