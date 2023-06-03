@@ -357,7 +357,9 @@ class SystemComputer:
         F_B_C_star[z] = Bz_C_star*u_star - (Bx*rho_w_C_star/Q_rho_hll)
         
         if debug:
-            print(idx, " | ", s_L, s_L_star, s_R_star, s_R, " | ", F_rho_C_star, F_u_C_star, F_B_C_star)
+            # print(idx, " | ", s_L, s_L_star, s_R_star, s_R, " | ", F_rho_C_star, F_u_C_star, F_B_C_star)
+            print(idx, " | ", s_L, s_L_star, s_R_star, s_R, " | ", F_u_C_star, Q_u_R_star, F_u_hll)
+
 
         if s_L > 0:
             result[0, 0] = F_rho_L
