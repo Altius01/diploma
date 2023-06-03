@@ -218,7 +218,7 @@ def main():
         #  cross_64_postprocess,
      ]
 
-    plot_energies(postprocesses)
+    # plot_energies(postprocesses)
 
 def plot_energies(posprocesses: list):
     kin_e = []

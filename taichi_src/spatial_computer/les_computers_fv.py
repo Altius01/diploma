@@ -7,9 +7,9 @@ from taichi_src.spatial_computer.computers_fv import *
 
 class LesComputer(SystemComputer):
     def __init__(self, gamma, Re, Ms, Ma, Rem, delta_hall, 
-        ghosts, shape, h, domain_size, ideal=False, hall=False, les=NonHallLES.DNS):
+        ghosts, shape, h, domain_size, ideal=False, hall=False, les=NonHallLES.DNS, dim=3):
         super().__init__(gamma, Re, Ms, Ma, Rem, delta_hall, 
-        ghosts, shape, h, domain_size, ideal, hall, les)
+        ghosts, shape, h, domain_size, ideal, hall, les, dim)
 
         self.D = 0
         self.C = 0
@@ -32,7 +32,7 @@ class LesComputer(SystemComputer):
     def get_filtered_shape(self, filter_size: vec3i):
         new_shape = [0, 0, 0]
         for i in range(len(filter_size)):
-            new_shape[i] = int(self.shape[i] // filter_size[i])
+            new_shape[i] = max(1, int(self.shape[i] // filter_size[i]))
         
         new_h = vec3(0)
 

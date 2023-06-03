@@ -47,8 +47,6 @@ class TiSolver:
         for i, l in enumerate(self.config.domain_size):
             self.h[i] = l / self.config.true_shape[i]
 
-        self.ghosts_system = self.fv_computer.ghosts_periodic_call
-
         self.data_service = DataService(dir_name=data_path,rw_energy=self.config.rewrite_energy)
 
         # ti.init(arch=arch, debug=True, device_memory_GB=8)
@@ -62,7 +60,9 @@ class TiSolver:
 
         self.fv_computer = LesComputer(self.gamma, self.Re, self.Ms, self.Ma, self.Rem, 
             self.delta_hall, self.ghost, self.config.shape, self.h, self.config.domain_size, ideal=self.ideal, hall=self.hall,
-             les=self.les_model)
+             les=self.les_model, dim=1)
+        # self.ghosts_system = self.fv_computer.ghosts_periodic_call
+        self.ghosts_system = self.fv_computer.ghosts_wall_call
 
     def read_file(self, i):
         self.current_time, rho_, p_, u_, B_ = self.data_service.read_data(i)
@@ -86,8 +86,8 @@ class TiSolver:
             Logger.log('Start solve initials.')
 
             # self.initials_rand()
-            self.initials_OT()
-            # self.initials_SOD()
+            # self.initials_OT()
+            self.initials_SOD()
 
             self.initials_ghosts()
             self.save_file(self.current_step)
@@ -156,16 +156,23 @@ class TiSolver:
 
     @ti.kernel
     def initials_SOD(self):
+        sq_pi = ti.sqrt(4*ti.math.pi)
         for idx in ti.grouped(self.rho[0]):
             x, y, z = idx
 
             rho_ = 1.0
-            if x > self.shape[0]:
-                rho_ = 0.125
+            if x > 0.5*self.shape[0]:
+                rho_ = 0.1
 
             self.rho[0][idx] = rho_
             self.u[0][idx] = vec3(0)
             self.B[0][idx] = vec3(0)
+
+            self.B[0][idx][0] = 3.0 / sq_pi
+            if x < 0.5*self.shape[0]:
+                self.B[0][idx][1] = 5.0 / sq_pi
+            else:
+                self.B[0][idx][1] = 2.0 / sq_pi
 
     @ti.kernel
     def initials_rand(self):
@@ -225,17 +232,33 @@ class TiSolver:
                 self.B[0][idx] = result
 
     @ti.kernel
-    def sum_fields(self, a: ti.template(), b:ti.template(), c:ti.template(), c1:double, c2:double, c3:double):
+    def sum_fields(self, a: ti.template(), b:ti.template(), c:ti.template(), d:ti.template(), c1:double, c2:double, c3:double):
         for idx in ti.grouped(a):
-              c[idx] = c1*a[idx] + c2*b[idx] + c3*c[idx]
+              d[idx] = c1*a[idx] + c2*b[idx] + c3*c[idx]
 
     @ti.kernel
-    def sum_fields_u(self, a: ti.template(), b:ti.template(), c:ti.template(), rho_old: ti.template(), rho_new:ti.template(), c1:double, c2:double, c3:double):
+    def sum_fields_u(self, a: ti.template(), b:ti.template(), c:ti.template(), 
+                     rho_old: ti.template(), rho_new:ti.template(), c1:double, c2:double, c3:double):
         for idx in ti.grouped(a):
             c[idx] = (c1*a[idx]*rho_old[idx] + c2* b[idx]) / (rho_new[idx]) + c3*c[idx]
+
+    @ti.kernel
+    def sum_fields_1_order(self, a: ti.template(), b:ti.template(), c1:double):
+        for idx in ti.grouped(a):
+              a[idx] = a[idx] + c1*b[idx]
+
+    @ti.kernel
+    def sum_fields_u_1_order(self, a: ti.template(), b:ti.template(), c1:double, rho_old: ti.template()):
+        for idx in ti.grouped(a):
+              a[idx] = (a[idx]*rho_old[idx] + c1*b[idx])
+
+    @ti.kernel
+    def div_fields_u_1_order(self, a: ti.template(), rho_new:ti.template()):
+        for idx in ti.grouped(a):
+              a[idx] /= rho_new[idx]
     
     def FV_step(self, dT):
-        coefs = [(1, 0.5 * dT, 0), (1, 0.5 * dT, 0), (2.0/3.0, (2.0/3.0) * dT, 1.0/3.0)]
+        coefs = [(1, dT, 0), (1, 0.5 * dT, 0), (2.0/3.0, (2.0/3.0) * dT, 1.0/3.0)]
 
         if (self.debug_fv_step):
             print("update_les start...")
@@ -246,35 +269,56 @@ class TiSolver:
 
         if self.div_cleaning == True:
             self.update_B_staggered_call()
-        for i, c in enumerate(coefs):
+        # for i, c in enumerate(coefs):
             
-            i_next = (i + 1) % self.rk_steps
+        #     i_next = (i + 1) % self.rk_steps
 
-            i_k = i_next
-            if i_k == 0:
-                i_k += 1
-
-
-            self.fv_computer.update_data(self.rho[i], self.p[i], self.u[i], self.B[i])
+        #     i_k = i_next
+        #     if i_k == 0:
+        #         i_k += 1
 
 
-            self.fv_computer.computeHLLD(self.rho[i_k], self.u[i_k], self.B[i_k], self.E)
+        #     self.fv_computer.update_data(self.rho[i], self.p[i], self.u[i], self.B[i])
+        #     self.fv_computer.computeHLLD(self.rho[i_k], self.u[i_k], self.B[i_k], self.E)
 
-            self.ghosts_system(self.rho[i_k], self.u[i_k], self.B[i_k])
+        #     self.ghosts_system(self.rho[i_k], self.u[i_k], self.B[i_k])
 
-            if self.div_cleaning == True:
-                self.fv_computer.ghosts_periodic_foo_call(self.E)
+        #     if self.div_cleaning == True:
+        #         self.fv_computer.ghosts_periodic_foo_call(self.E)
 
-            self.fv_computer.computeB_staggered(self.E, self.B_staggered[i_k])
-            self.fv_computer.ghosts_call(self.B_staggered[i_k])
+        #         self.fv_computer.computeB_staggered(self.E, self.B_staggered[i_k])
+        #         self.fv_computer.ghosts_periodic_foo_call(self.B_staggered[i_k])
 
 
-            self.sum_fields(self.rho[i], self.rho[i_k], self.rho[i_next], c[0], c[1], c[2])
-            self.sum_fields_u(self.u[i], self.u[i_k], self.u[i_next], self.rho[i], self.rho[i_next], c[0], c[1], c[2])
-            self.sum_fields(self.B[i], self.B[i_k], self.B[i_next], c[0], c[1], c[2])
-            self.sum_fields(self.B_staggered[i], self.B_staggered[i_k], self.B_staggered[i_next], c[0], c[1], c[2])
+        #     self.sum_fields(self.rho[0], self.rho[i], self.rho[i_k], self.rho[i_next], c[0], c[1], c[2])
+
+        #     self.sum_fields(self.B[0], self.B[i], self.B[i_k], self.B[i_next], c[0], c[1], c[2])
+        #     self.sum_fields(self.B_staggered[0], self.B_staggered[i], self.B_staggered[i_k], self.B_staggered[i_next], c[0], c[1], c[2])
+
+        #     self.sum_fields_u(self.B[0], self.u[i], self.u[i_k], self.u[i_next], self.rho[i], self.rho[i_next], c[0], c[1], c[2])
+
+
+        self.fv_computer.update_data(self.rho[0], self.p[0], self.u[0], self.B[0])
+        self.fv_computer.computeHLLD(self.rho[1], self.u[1], self.B[1], self.E)
+
+        self.ghosts_system(self.rho[1], self.u[1], self.B[1])
+
+        
+        self.sum_fields_u_1_order(self.u[0], self.u[1], dT, self.rho[0])
+
+        self.sum_fields_1_order(self.rho[0], self.rho[1], dT)
+        self.sum_fields_1_order(self.B[0], self.B[1], dT)
+
+        self.div_fields_u_1_order(self.u[0], self.rho[0])
+
+        if self.div_cleaning == True:
+            self.fv_computer.ghosts_periodic_foo_call(self.E)
+
+            self.fv_computer.computeB_staggered(self.E, self.B_staggered[1])
+            self.fv_computer.ghosts_periodic_foo_call(self.B_staggered[1])
+
 
         if self.div_cleaning == True:
             self.update_B_call()
         self.fv_computer.computeP(self.p[0], self.B[0])
-        self.fv_computer.ghosts_call(self.p[0])
+        self.fv_computer.ghosts_periodic_foo_call(self.p[0])

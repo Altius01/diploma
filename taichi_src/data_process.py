@@ -22,15 +22,15 @@ class TiDataProcessor:
         self.current_time = 0
 
     @ti.func
-    def _check_ghost(self, shape, idx):
-        return (idx < self.config.ghosts) or (idx >= shape - self.config.ghosts)
+    def _check_ghost(self, shape, ghost, idx):
+        return (idx < ghost) or (idx >= shape -ghost)
 
     @ti.func
     def check_ghost_idx(self, idx):
         result = False
 
         for i in ti.static(range(idx.n)):
-            result = result or self._check_ghost(self.config.shape[i], idx[i])
+            result = result or self._check_ghost(self.config.shape[i], self.config.ghosts[i], idx[i])
 
         return result
 

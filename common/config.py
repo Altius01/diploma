@@ -7,7 +7,7 @@ class Config:
     # debug
     debug = False
     # count of ghost points
-    ghosts = 0
+    ghosts = []
     # geometry
     shape = ()
     v_shape = ()
@@ -59,7 +59,7 @@ class Config:
     def generate_default(self):
         str = """
 {
-    "ghosts": 3, 
+    "ghosts": [3, 3, 3], 
     "shape": [64, 64, 64], 
     "size": [6.283185307179586, 6.283185307179586, 6.283185307179586], 
     "rw_delemiter": 10,
@@ -92,7 +92,7 @@ class Config:
         with open(self.file_path, 'r') as f:
             data = dict(json.load(f))
 
-            self.ghosts = data.get('ghosts', 2)
+            self.ghosts = data.get('ghosts', [3, 3, 3])
 
             self.true_shape = tuple(data.get('shape', (0, 0, 0,)))
 
@@ -106,9 +106,9 @@ class Config:
             for i in range(3):
                 self.dV *= self.domain_size[i] / self.true_shape[i]
 
-            self.shape = (self.true_shape[0]+2*self.ghosts, 
-                        self.true_shape[1]+2*self.ghosts, 
-                        self.true_shape[2]+2*self.ghosts, )
+            self.shape = (self.true_shape[0]+2*self.ghosts[0], 
+                        self.true_shape[1]+2*self.ghosts[1], 
+                        self.true_shape[2]+2*self.ghosts[2], )
             
             self.v_shape = (3, ) + self.shape
             self.mat_shape = (3, 3, ) + self.shape
