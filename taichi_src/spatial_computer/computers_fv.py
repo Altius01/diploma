@@ -149,8 +149,7 @@ class SystemComputer:
         b_x = (1.0 / self.Ma) * B[j] / pi_rho
         # Sound speed
         _p = self.u_computer.get_pressure(rho)
-        c = (1.0 / self.Ms)
-        # c = (1.0 / self.Ms) * ti.sqrt(self.gamma * _p / rho)
+        c = self.get_sound_speed(_p, Q_rho)
         # Alfen speed
         c_a = (1.0 / self.Ma) * B[j] / pi_rho
 
@@ -171,6 +170,10 @@ class SystemComputer:
         #     0,
         # ])
 
+    @ti.func
+    def get_sound_speed(self, p, rho):
+        # return (1.0 / self.Ms) * ti.sqrt(self.gamma * _p / Q_rho)
+        return (1.0 / self.Ms)
     
     @ti.func
     def get_c_fast(self, Q_rho, Q_u, Q_B, j):
@@ -181,8 +184,7 @@ class SystemComputer:
         b_x = (1.0 / self.Ma) * Q_B[j] / pi_rho
         # Sound speed
         _p = self.u_computer.get_pressure(Q_rho)
-        c = (1.0 / self.Ms)
-        # c = (1.0 / self.Ms) * ti.sqrt(self.gamma * _p / Q_rho)
+        c = self.get_sound_speed(_p, Q_rho)
         # Alfen speed
         c_a = (1.0 / self.Ma) * Q_B[j] / pi_rho
 
@@ -244,7 +246,7 @@ class SystemComputer:
 
     @ti.func
     def HLLD(self, flux_rho: ti.template(), flux_u: ti.template(), flux_B: ti.template(), 
-        Q_rho_L, Q_u_L, Q_B_L, Q_rho_R, Q_u_R, Q_B_R, i, idx=0, debug=False):
+        Q_rho_L, Q_u_L, Q_B_L, Q_rho_R, Q_u_R, Q_B_R, i, idx=0):
 
         c_f_L = self.get_c_fast(Q_rho_L, Q_u_L, Q_B_L, i)
         c_f_R = self.get_c_fast(Q_rho_R, Q_u_R, Q_B_R, i)
@@ -356,10 +358,6 @@ class SystemComputer:
         F_B_C_star[y] = By_C_star*u_star - (Bx*rho_v_C_star/Q_rho_hll)
         F_B_C_star[z] = Bz_C_star*u_star - (Bx*rho_w_C_star/Q_rho_hll)
         
-        if debug:
-            # print(idx, " | ", s_L, s_L_star, s_R_star, s_R, " | ", F_rho_C_star, F_u_C_star, F_B_C_star)
-            print(idx, " | ", s_L, s_L_star, s_R_star, s_R, " | ", F_u_hll, F_u_L, F_u_R)
-
         if s_L > 0:
             result[0, 0] = F_rho_L
             result[:, 1] = F_u_L
@@ -409,17 +407,11 @@ class SystemComputer:
                     F_R[j, 0] = flux_r[E_idx[0], 2]
                     F_R[j, 1] = flux_r[E_idx[1], 2]
 
-                    if idx[0] > 250 and idx[0] < 256:
-                        print("idx_l: ", idx_l, "idx_r: ", idx_r, "flux_l: ", flux_l[:, 1], " flux_r: ", flux_r[:, 1])
-
                     res -= (flux_r - flux_l) / get_elem_1d(self.h, j)
 
                 out_rho[idx] = res[0, 0]
                 out_u[idx] = res[:, 1]
                 out_B[idx] = res[:, 2]
-
-                if idx[0] > 250 and idx[0] < 256:
-                    print("HLLD idx: ", idx, "Final flux: ", res[:, 1])
 
                 E = vec3(0)
                 E[0] = 0.25 * (F_R[2, 1] + F_L[2, 1] - F_L[1, 1] - F_R[1, 1])
