@@ -32,7 +32,7 @@ class SystemComputer:
 
         self.filter_size = vec3i([1, 1, 1])
         # self.k = -(1.0/3.0)
-        self.k = -1
+        # self.k = 1
 
         self.dimensions = dim
         self.implement_dimension()
@@ -149,7 +149,7 @@ class SystemComputer:
         b_x = (1.0 / self.Ma) * B[j] / pi_rho
         # Sound speed
         _p = self.u_computer.get_pressure(rho)
-        c = self.get_sound_speed(_p, Q_rho)
+        c = self.get_sound_speed(_p, rho)
         # Alfen speed
         c_a = (1.0 / self.Ma) * B[j] / pi_rho
 
@@ -172,8 +172,7 @@ class SystemComputer:
 
     @ti.func
     def get_sound_speed(self, p, rho):
-        # return (1.0 / self.Ms) * ti.sqrt(self.gamma * _p / Q_rho)
-        return (1.0 / self.Ms)
+        return (1.0 / self.Ms) * ti.sqrt(self.gamma * p / rho)
     
     @ti.func
     def get_c_fast(self, Q_rho, Q_u, Q_B, j):
@@ -236,13 +235,13 @@ class SystemComputer:
     def Q_R(self, Q: ti.template(), i, idx):
         idx_left = idx
         idx_right = idx + 2*get_basis(i)
-        # idx = idx + get_basis(i)
+        idx_new = idx + get_basis(i)
 
-        D_m = Q(idx) - Q(idx_left)
-        D_p = Q(idx_right) - Q(idx)
+        D_m = Q(idx_new) - Q(idx_left)
+        D_p = Q(idx_right) - Q(idx_new)
 
-        # return Q(idx) - 0.25 * ( (1+self.k)*self.minmod(D_p / D_m)*D_m + (1-self.k)*self.minmod(D_m / D_p)*D_p)
-        return Q(idx + get_basis(i))
+        # return Q(idx_new) - 0.25 * ( (1+self.k)*self.minmod(D_p / D_m)*D_m + (1-self.k)*self.minmod(D_m / D_p)*D_p)
+        return Q(idx_new)
 
     @ti.func
     def HLLD(self, flux_rho: ti.template(), flux_u: ti.template(), flux_B: ti.template(), 
@@ -576,44 +575,44 @@ class SystemComputer:
         result = self.HLLD(self.rho_computer.flux_convective, 
             self.u_computer.flux_convective, 
             self.B_computer.flux_convective,
-            Q_rho_L, Q_u_L, Q_B_L, Q_rho_R, Q_u_R, Q_B_R, i, idx[0], debug)
+            Q_rho_L, Q_u_L, Q_B_L, Q_rho_R, Q_u_R, Q_B_R, i)
 
 
-        # corner = idx - vec3i([1, 0, 0]) + self.get_dx_st(i, 0, 0, left=False)
-        # V_rho = self.V_plus_sc(self.V_rho, corner)
-        # V_u = self.V_plus_vec(self.V_B, corner)
-        # V_B = self.V_plus_vec(self.V_B, corner)
+        corner = idx - vec3i([1, 0, 0]) + self.get_dx_st(i, 0, 0, left=False)
+        V_rho = self.V_plus_sc(self.V_rho, corner)
+        V_u = self.V_plus_vec(self.V_B, corner)
+        V_B = self.V_plus_vec(self.V_B, corner)
 
-        # if ti.static(self.ideal==False):
-        #     gradU = self.grad_U(corner)
-        #     gradB = self.grad_B(corner)
+        if ti.static(self.ideal==False):
+            gradU = self.grad_U(corner)
+            gradB = self.grad_B(corner)
 
-        #     result[:, 1] -= 0.25*get_mat_col(
-        #         self.u_computer.flux_viscous(V_rho, V_u, V_B, gradU, gradB)
-        #         , i)
+            result[:, 1] -= 0.25*get_mat_col(
+                self.u_computer.flux_viscous(V_rho, V_u, V_B, gradU, gradB)
+                , i)
             
-        #     result[:, 2] -= 0.25*get_mat_col(
-        #         self.B_computer.flux_viscous(V_rho, V_u, V_B, gradU, gradB)
-        #         , i)
+            result[:, 2] -= 0.25*get_mat_col(
+                self.B_computer.flux_viscous(V_rho, V_u, V_B, gradU, gradB)
+                , i)
 
-        # if ti.static(self.hall):
-        #     result[:, 2] -= 0.25*get_mat_col(
-        #         self.B_computer.flux_hall(V_rho, V_u, V_B, self.grad_B(corner), self.rot_B(corner))
-        #         , i)
+        if ti.static(self.hall):
+            result[:, 2] -= 0.25*get_mat_col(
+                self.B_computer.flux_hall(V_rho, V_u, V_B, self.grad_B(corner), self.rot_B(corner))
+                , i)
             
-        # if ti.static(self.les != NonHallLES.DNS):
-        #     gradU = self.grad_U(corner)
-        #     gradB = self.grad_B(corner)
-        #     rotU = self.rot_U(corner)
-        #     rotB = self.rot_B(corner)
+        if ti.static(self.les != NonHallLES.DNS):
+            gradU = self.grad_U(corner)
+            gradB = self.grad_B(corner)
+            rotU = self.rot_U(corner)
+            rotB = self.rot_B(corner)
 
-        #     result[:, 1] -= 0.25*get_mat_col(
-        #         self.u_computer.flux_les(V_rho, V_u, V_B, gradU, gradB, rotU, rotB)
-        #         , i)
+            result[:, 1] -= 0.25*get_mat_col(
+                self.u_computer.flux_les(V_rho, V_u, V_B, gradU, gradB, rotU, rotB)
+                , i)
 
-        #     result[:, 2] -= 0.25*get_mat_col(
-        #         self.B_computer.flux_les(V_rho, V_u, V_B, gradU, gradB, rotU, rotB)
-        #         , i)
+            result[:, 2] -= 0.25*get_mat_col(
+                self.B_computer.flux_les(V_rho, V_u, V_B, gradU, gradB, rotU, rotB)
+                , i)
         
         return result
 
@@ -766,8 +765,7 @@ class MomentumCompute(Compute):
 
     @ti.func
     def get_pressure(self, rho):
-        # return ti.pow(rho, self.gamma)
-        return rho
+        return ti.pow(rho, self.gamma)
 
     @ti.func
     def flux_convective(self, Q_rho, Q_u, Q_B):

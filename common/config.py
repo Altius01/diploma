@@ -96,6 +96,12 @@ class Config:
 
             self.true_shape = tuple(data.get('shape', (0, 0, 0,)))
 
+            self.dim = 1
+            if self.true_shape[1] > 1:
+                self.dim = 2
+            if self.true_shape[2] > 1:
+                self.dim = 3
+
             self.true_v_shape = (3, ) + self.true_shape
             self.true_mat_shape = (3, 3, ) + self.true_shape
 

@@ -60,9 +60,9 @@ class TiSolver:
 
         self.fv_computer = LesComputer(self.gamma, self.Re, self.Ms, self.Ma, self.Rem, 
             self.delta_hall, self.ghost, self.config.shape, self.h, self.config.domain_size, ideal=self.ideal, hall=self.hall,
-             les=self.les_model, dim=1)
-        # self.ghosts_system = self.fv_computer.ghosts_periodic_call
-        self.ghosts_system = self.fv_computer.ghosts_wall_call
+             les=self.les_model, dim=self.config.dim)
+        self.ghosts_system = self.fv_computer.ghosts_periodic_call
+        # self.ghosts_system = self.fv_computer.ghosts_wall_call
 
     def read_file(self, i):
         self.current_time, rho_, p_, u_, B_ = self.data_service.read_data(i)
@@ -86,8 +86,8 @@ class TiSolver:
             Logger.log('Start solve initials.')
 
             # self.initials_rand()
-            # self.initials_OT()
-            self.initials_SOD()
+            self.initials_OT()
+            # self.initials_SOD()
 
             self.initials_ghosts()
             self.save_file(self.current_step)
@@ -254,8 +254,6 @@ class TiSolver:
     @ti.kernel
     def sum_fields_u_1_order(self, a: ti.template(), b:ti.template(), c1:double, rho_old: ti.template()):
         for idx in ti.grouped(a):
-              if idx[0] > 250 and idx[0] < 256:
-                    print("idx: ", idx, "Final flux: ", c1*b[idx], c1)
               a[idx] = (a[idx]*rho_old[idx] + c1*b[idx])
 
     @ti.kernel
