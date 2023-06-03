@@ -286,13 +286,7 @@ class SystemComputer:
         Q_u_hll = (s_R*Q_u_R - s_L*Q_u_L - F_u_R + F_u_L) / (s_R - s_L)
         F_u_hll = (s_R*F_u_L - s_L*F_u_R + s_R*s_L*(Q_u_R - Q_u_L)) / (s_R - s_L)
 
-        # Q_B_hll = (s_R*Q_B_R - s_L*Q_B_L - F_b_R + F_b_L) / (s_R - s_L)
-
-        # Bx = Q_B_hll[x]
         Bx = Q_B_L[x]
-
-        if Q_B_L[x] != Q_B_R[x]:
-            print("ALARM!!!")
 
         u_star = F_rho_hll / Q_rho_hll
 
@@ -327,10 +321,11 @@ class SystemComputer:
             Bz_R_star = (Bz_R / Q_rho_hll) *( (Q_rho_R*(s_R - u_R)**2 - (1.0 / self.Ma**2) * Bx**2) / ((s_R - s_L_star)*(s_R - s_R_star)))
 
         Xi = ti.sqrt(Q_rho_hll)*ti.math.sign(Bx)
+
         rho_v_C_star = 0.5*(rho_v_L_star + rho_v_R_star) + (0.5/self.Ma**2)*(By_R_star - By_L_star)*Xi
         rho_w_C_star = 0.5*(rho_w_L_star + rho_w_R_star) + (0.5/self.Ma**2)*(Bz_R_star - Bz_L_star)*Xi
-        By_C_star = 0.5*(By_L_star + By_R_star) + 0.5*(rho_v_R_star - rho_v_L_star) / (Xi)
-        Bz_C_star = 0.5*(Bz_L_star + Bz_R_star) + 0.5*(rho_w_R_star - rho_w_L_star) / (Xi)
+        By_C_star = 0.5*(By_L_star + By_R_star) + 0.5*((rho_v_R_star - rho_v_L_star) / Xi)
+        Bz_C_star = 0.5*(Bz_L_star + Bz_R_star) + 0.5*((rho_w_R_star - rho_w_L_star) / Xi)
 
         result = mat3x3(0)
 
@@ -362,7 +357,7 @@ class SystemComputer:
         F_B_C_star[z] = Bz_C_star*u_star - (Bx*rho_w_C_star/Q_rho_hll)
         
         if debug:
-            print(idx, s_L, s_L_star, s_R_star, s_R, c_f_L, c_f_R)
+            print(idx, " | ", s_L, s_L_star, s_R_star, s_R, " | ", F_rho_C_star, F_u_C_star, F_B_C_star)
 
         if s_L > 0:
             result[0, 0] = F_rho_L
