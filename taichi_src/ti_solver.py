@@ -38,8 +38,8 @@ class TiSolver:
         Logger.log(f'   CFL: {self.CFL}, LES_Model: {self.les_model}, Ideal: {self.ideal}, Hall: {self.hall}')
         Logger.log(f'   Re: {self.Re}, Rem: {self.Rem}, delta_hall: {self.delta_hall}, Ma: {self.Ma}, Ms: {self.Ms}, gamma: {self.gamma}')
 
-        self.debug_fv_step = True
-        # self.debug_fv_step = False
+        # self.debug_fv_step = True
+        self.debug_fv_step = False
 
         self.config = config
         self.ghost = self.config.ghosts
@@ -65,11 +65,14 @@ class TiSolver:
         self.div_cleaning = False
         self.ghosts_system = self.fv_computer.ghosts_wall_call
 
+        self.initials_OT = self.initials_OT_2D
+
         if self.config.dim == 2:
-            self.div_cleaning = True
+            # self.div_cleaning = True
             self.update_B_staggered = self.update_B_staggered_2D
             self.update_B = self.update_B_2D
             self.update_B_staggered = self.update_B_staggered_2D
+            self.initials_OT = self.initials_OT_2D
 
             self.ghosts_system = self.fv_computer.ghosts_periodic_call
         elif self.config.dim == 3:
@@ -77,6 +80,7 @@ class TiSolver:
             self.update_B_staggered = self.update_B_staggered_3D
             self.update_B = self.update_B_3D
             self.update_B_staggered = self.update_B_staggered_3D
+            self.initials_OT = self.initials_OT_3D
 
             self.ghosts_system = self.fv_computer.ghosts_periodic_call
 
@@ -139,16 +143,17 @@ class TiSolver:
         self.fv_computer.update_data(self.rho[0], self.p[0], self.u[0], self.B[0])
         lambdas = self.fv_computer.get_cfl_cond()
 
-        denominator = (
-            lambdas[0] / self.h[0] 
-            + lambdas[1] / self.h[1] 
-            + lambdas[2] / self.h[2]
-        )
+        dT = self.CFL*ti.min(self.h[0] / lambdas[0], self.h[1] / lambdas[1], self.h[2] / lambdas[2])
 
+        dT_visc = dT
         if (self.ideal == False):
-            denominator += 2*((4.0/3.0)*(self.Rem/self.Re) + 1.0)*self.nu_0*(1.0/self.h[0]**2 + 1.0/self.h[1]**2 + 1.0/self.h[2]**2)
+            dT_visc = self.CFL*ti.min(
+                self.h[0]**2 / (2*((4.0/3.0)*(self.Rem/self.Re) + 1.0)*self.nu_0), 
+                self.h[1]**2 / (2*((4.0/3.0)*(self.Rem/self.Re) + 1.0)*self.nu_0), 
+                self.h[2]**2 / (2*((4.0/3.0)*(self.Rem/self.Re) + 1.0)*self.nu_0)
+            )
         
-        return self.CFL / (denominator + 1e-6)
+        return ti.min(dT, dT_visc)
 
     @ti.func
     def _check_ghost(self, shape, idx):
@@ -164,7 +169,7 @@ class TiSolver:
         return result
 
     @ti.kernel
-    def initials_OT(self):
+    def initials_OT_3D(self):
         sq_pi = ti.sqrt(4*ti.math.pi)
         for idx in ti.grouped(self.rho[0]):
             x, y, z = idx
@@ -174,6 +179,24 @@ class TiSolver:
                 -(1 + self.eps_p*ti.math.sin(self.h[2]*z))*self.U0*ti.math.sin(self.h[1]*y),
                 (1 + self.eps_p*ti.math.sin(self.h[2]*z))*self.U0*ti.math.sin(self.h[0]*x),
                 self.eps_p*ti.math.sin(self.h[2]*z)
+                ])
+            self.B[0][idx] = vec3([
+                -self.B0*ti.math.sin(self.h[1]*y),
+                self.B0*ti.math.sin(2.0*self.h[0]*x),
+                0
+                ]) / sq_pi
+            
+    @ti.kernel
+    def initials_OT_2D(self):
+        sq_pi = ti.sqrt(4*ti.math.pi)
+        for idx in ti.grouped(self.rho[0]):
+            x, y, z = idx
+
+            self.rho[0][idx] = self.RHO0
+            self.u[0][idx] = vec3([
+                -self.U0*ti.math.sin(self.h[1]*y),
+                self.U0*ti.math.sin(self.h[0]*x),
+                0
                 ])
             self.B[0][idx] = vec3([
                 -self.B0*ti.math.sin(self.h[1]*y),

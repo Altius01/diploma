@@ -187,42 +187,43 @@ class SystemComputer:
         # pi_rho = ti.sqrt(4 * ti.math.pi * Q_rho)
         pi_rho = ti.sqrt(Q_rho)
 
-        b = (1.0 / self.Ma) * Q_b.norm() / pi_rho
-        b_x = (1.0 / self.Ma) * Q_b[j] / pi_rho
+        b = (1.0 / self.Ma) * ( Q_b.norm() / pi_rho )
+        b_x = (1.0 / self.Ma) * ( Q_b[j] / pi_rho )
         # Sound speed
         _p = self.u_computer.get_pressure(Q_rho)
         c = self.get_sound_speed(_p, Q_rho)
-        # Alfen speed
-        c_a = (1.0 / self.Ma) * Q_b[j] / pi_rho
 
         sq_root = ti.sqrt((b**2 + c**2)**2 - 4 * b_x**2 * c**2)
 
         # Magnetosonic wawes
-        c_f = ti.sqrt( 0.5 * (b**2 + c**2) + sq_root)
+        c_f = ti.sqrt( 0.5 * ((b**2 + c**2) + sq_root))
 
         return c_f
 
     @ti.func
     def get_s_j_max(self, j, idx):
         u = self.u[idx]
-        B = self.B[idx]
+        b = self.B[idx]
         rho = self.rho[idx]
         
-        return ti.abs(u[j]) + self.get_c_fast(rho, u, B, j)
+        return ti.abs(u[j]) + self.get_c_fast(rho, u, b, j)
 
     @ti.kernel
     def get_cfl_cond(self) -> vec3:
-        result = vec3(0)
+        max_x = double(1e-8)
+        max_y = double(1e-8)
+        max_z = double(1e-8)
         for idx in ti.grouped(self.rho):
-            result[0] = ti.max(result[0], self.get_s_j_max(0, idx))
+            
+            ti.atomic_max(max_x, self.get_s_j_max(0, idx))
 
             if self.dimensions > 1:
-                result[1] = ti.max(result[1], self.get_s_j_max(1, idx))
+                ti.atomic_max(max_y, self.get_s_j_max(1, idx))
             
             if self.dimensions > 2:
-                result[2] = ti.max(result[2], self.get_s_j_max(2, idx))
+                ti.atomic_max(max_z, self.get_s_j_max(2, idx))
 
-        return result
+        return vec3([max_x, max_y, max_z])
     
     @ti.func
     def minmod(self, r):
@@ -236,8 +237,8 @@ class SystemComputer:
         D_m = Q(idx) - Q(idx_left)
         D_p = Q(idx_right) - Q(idx)
 
-        return Q(idx) + 0.25 * ( (1-self.k)*self.minmod(D_p / D_m)*D_m + (1+self.k)*self.minmod(D_m / D_p)*D_p)
-        # return Q(idx)
+        # return Q(idx) + 0.25 * ( (1-self.k)*self.minmod(D_p / D_m)*D_m + (1+self.k)*self.minmod(D_m / D_p)*D_p)
+        return Q(idx)
 
     @ti.func
     def Q_R(self, Q: ti.template(), i, idx):
@@ -248,8 +249,8 @@ class SystemComputer:
         D_m = Q(idx_new) - Q(idx_left)
         D_p = Q(idx_right) - Q(idx_new)
 
-        return Q(idx_new) - 0.25 * ( (1+self.k)*self.minmod(D_p / D_m)*D_m + (1-self.k)*self.minmod(D_m / D_p)*D_p)
-        # return Q(idx_new)
+        # return Q(idx_new) - 0.25 * ( (1+self.k)*self.minmod(D_p / D_m)*D_m + (1-self.k)*self.minmod(D_m / D_p)*D_p)
+        return Q(idx_new)
 
     @ti.func
     def HLLD(self, flux_rho: ti.template(), flux_u: ti.template(), flux_B: ti.template(), 
@@ -278,8 +279,8 @@ class SystemComputer:
         Bz_L = Q_b_L[z]
 
         s_L = ti.min(u_L - c_f_L, u_R - c_f_R)
-        # s_R = ti.min(u_L + c_f_L, u_R + c_f_R)
-        s_R = ti.max(u_L + c_f_L, u_R + c_f_R)
+        s_R = ti.min(u_L + c_f_L, u_R + c_f_R)
+        # s_R = ti.max(u_L + c_f_L, u_R + c_f_R)
 
         F_rho_L = get_vec_col(flux_rho(Q_rho_L, Q_u_L, Q_b_L), i)
         F_rho_R = get_vec_col(flux_rho(Q_rho_R, Q_u_R, Q_b_R), i)
@@ -301,7 +302,6 @@ class SystemComputer:
 
         u_star = F_rho_hll / Q_rho_hll
 
-        # ca = (1.0 / self.Ma) * ( ti.abs(Bx) / ti.sqrt(4*ti.math.pi*Q_rho_hll) )
         ca = (1.0 / self.Ma) * ( ti.abs(Bx) / ti.sqrt(Q_rho_hll) )
         s_L_star = u_star - ca
         s_R_star = u_star + ca
@@ -550,13 +550,11 @@ class SystemComputer:
         Q_b_R = self.Q_R(self.Q_b, i, idx)
         Q_b_L = self.Q_L(self.Q_b, i, idx)
 
-        # result = self.HLLD(self.rho_computer.flux_convective, 
-        #     self.u_computer.flux_convective, 
-        #     self.B_computer.flux_convective,
-        #     Q_rho_L, Q_u_L, Q_b_L, Q_rho_R, Q_u_R, Q_b_R, i)
+        result = self.HLLD(self.rho_computer.flux_convective, 
+            self.u_computer.flux_convective, 
+            self.B_computer.flux_convective,
+            Q_rho_L, Q_u_L, Q_b_L, Q_rho_R, Q_u_R, Q_b_R, i)
         
-        result = mat3x3(0)
-
         for j in ti.ndrange(2):
             corner = idx - vec3i([1, 1, 0]) + self.get_dx_st(i, j, 0, left=False)
             V_rho = self.V_plus_sc(self.V_rho, corner)
@@ -656,7 +654,7 @@ class SystemComputer:
         for idx in ti.grouped(out):
             if not self.check_ghost_idx(idx):
                 # out[idx] = ti.math.pow(ti.cast(rho_new[idx], ti.f32), ti.cast(self.gamma, ti.f32))
-                out[idx] = 0.5*B[idx].norm_sqr()
+                out[idx] = 0.5*foo_B(idx).norm_sqr()
                 # out[idx] = self.div_vec(foo_B, self.h, idx)
 
     @ti.kernel

@@ -13,7 +13,7 @@ sys.path.append(Path(__file__).parent.parent.as_posix())
 print(sys.path)
 
 arch = ti.gpu
-ti.init(arch=arch, debug=True, device_memory_GB=20)
+ti.init(arch=arch, debug=True, device_memory_GB=10)
 
 from config import Config
 from taichi_src.data_process import TiDataProcessor
