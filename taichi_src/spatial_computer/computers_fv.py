@@ -338,11 +338,11 @@ class SystemComputer:
         Q_u_R_star[y] = rho_v_R_star
         Q_u_R_star[z] = rho_w_R_star
 
-        Q_B_L_star = Q_B_hll
+        Q_B_L_star = Q_B_L
         Q_B_L_star[y] = By_L_star
         Q_B_L_star[z] = Bz_L_star
 
-        Q_B_R_star = Q_B_hll
+        Q_B_R_star = Q_B_R
         Q_B_R_star[y] = By_R_star
         Q_B_R_star[z] = Bz_R_star
 
