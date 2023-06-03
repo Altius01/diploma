@@ -101,6 +101,7 @@ DNS_256_HALL_CONFIG_PATH = PATH_CWD / 'dns_256_hall_config.json'
 
 DNS_128_DATA_PATH = PATH_CWD / 'DNS_128'
 DNS_128_CONFIG_PATH = PATH_CWD / 'dns_128_config.json'
+# DNS_128_CONFIG_PATH = PATH_CWD / 'dns_128_config_sod.json'
 
 DNS_16_DATA_PATH = PATH_CWD / 'DNS_16'
 DNS_16_CONFIG_PATH = PATH_CWD / 'dns_16_config.json'

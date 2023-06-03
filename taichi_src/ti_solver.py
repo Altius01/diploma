@@ -31,10 +31,8 @@ class TiSolver:
         self.ideal = config.ideal
         self.hall = config.hall
 
-        self.div_cleaning = False
-
         Logger.log(f'Starting with:')
-        Logger.log(f'   Shape: {config.true_shape}')
+        Logger.log(f'   Shape: {config.true_shape}, dim: {config.dim}')
         Logger.log(f'   CFL: {self.CFL}, LES_Model: {self.les_model}, Ideal: {self.ideal}, Hall: {self.hall}')
         Logger.log(f'   Re: {self.Re}, Rem: {self.Rem}, delta_hall: {self.delta_hall}, Ma: {self.Ma}, Ms: {self.Ms}, gamma: {self.gamma}')
 
@@ -62,6 +60,7 @@ class TiSolver:
             self.delta_hall, self.ghost, self.config.shape, self.h, self.config.domain_size, ideal=self.ideal, hall=self.hall,
              les=self.les_model, dim=self.config.dim)
         
+        self.div_cleaning = False
         self.ghosts_system = self.fv_computer.ghosts_wall_call
 
         if self.config.dim == 2:
@@ -71,7 +70,7 @@ class TiSolver:
             self.update_B_staggered = self.update_B_staggered_2D
 
             self.ghosts_system = self.fv_computer.ghosts_periodic_call
-        elif self.config.dim == 2:
+        elif self.config.dim == 3:
             self.div_cleaning = True
             self.update_B_staggered = self.update_B_staggered_3D
             self.update_B = self.update_B_3D
@@ -135,7 +134,7 @@ class TiSolver:
         self.fv_computer.update_data(self.rho[0], self.p[0], self.u[0], self.B[0])
         lambdas = self.fv_computer.get_cfl_cond()
 
-        denominator = (
+        denominator = 2.0*(
             lambdas[0] / self.h[0] 
             + lambdas[1] / self.h[1] 
             + lambdas[2] / self.h[2]
@@ -362,21 +361,24 @@ class TiSolver:
         self.ghosts_system(self.rho[1], self.u[1], self.B[1])
 
         if self.div_cleaning == True:
+            if (self.debug_fv_step):
+                print("B div cleaning...")
             self.fv_computer.ghosts_periodic_foo_call(self.E)
 
             self.fv_computer.computeB_staggered(self.E, self.B_staggered[1])
             self.fv_computer.ghosts_periodic_foo_call(self.B_staggered[1])
+            self.sum_fields_1_order(self.B_staggered[0], self.B_staggered[1], dT)
 
         self.sum_fields_u_1_order(self.u[0], self.u[1], dT, self.rho[0])
 
         self.sum_fields_1_order(self.rho[0], self.rho[1], dT)
         self.sum_fields_1_order(self.B[0], self.B[1], dT)
-        self.sum_fields_1_order(self.B_staggered[0], self.B_staggered[1], dT)
 
         self.div_fields_u_1_order(self.u[0], self.rho[0])
 
 
         if self.div_cleaning == True:
             self.update_B_call()
+
         self.fv_computer.computeP(self.p[0], self.get_B0)
         self.fv_computer.ghosts_periodic_foo_call(self.p[0])

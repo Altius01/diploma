@@ -32,7 +32,7 @@ class SystemComputer:
 
         self.filter_size = vec3i([1, 1, 1])
         # self.k = -(1.0/3.0)
-        # self.k = 1
+        self.k = 1.0
 
         self.dimensions = dim
         self.implement_dimension()
@@ -89,7 +89,7 @@ class SystemComputer:
         return self.rho[idx]*self.u[idx]
     
     @ti.func
-    def Q_B(self, idx):
+    def Q_b(self, idx):
         return self.B[idx]
 
     @ti.func
@@ -101,7 +101,7 @@ class SystemComputer:
         return self.u[idx]
     
     @ti.func
-    def V_B(self, idx):
+    def V_b(self, idx):
         return self.B[idx]
 
     @ti.func
@@ -114,7 +114,7 @@ class SystemComputer:
     
     @ti.func
     def grad_B(self, idx):
-        return self.grad_vec(self.V_B, self.h, idx)
+        return self.grad_vec(self.V_b, self.h, idx)
 
     @ti.func
     def rot_U(self, idx):
@@ -122,7 +122,7 @@ class SystemComputer:
     
     @ti.func
     def rot_B(self, idx):
-        return self.rot_vec(self.V_B, self.h, idx)
+        return self.rot_vec(self.V_b, self.h, idx)
 
     @ti.func
     def _check_ghost(self, shape, ghost, idx):
@@ -163,7 +163,11 @@ class SystemComputer:
         c_s = ti.sqrt( 0.5 * (b**2 + c**2) - sq_root)
         c_f = ti.sqrt( 0.5 * (b**2 + c**2) + sq_root)
 
-        return ti.abs(u[j]) + c_f
+        return ti.max(
+            ti.abs(u[j]) + c_f,
+            ti.abs(u[j]) + c_s,
+            ti.abs(u[j]) + c_a
+        )
         # return ti.Vector([
         #     u[j] + c_f,
         #     u[j] - c_f,
@@ -179,17 +183,17 @@ class SystemComputer:
         return (1.0 / self.Ms) * ti.sqrt(self.gamma * p / rho)
     
     @ti.func
-    def get_c_fast(self, Q_rho, Q_u, Q_B, j):
+    def get_c_fast(self, Q_rho, Q_u, Q_b, j):
         # pi_rho = ti.sqrt(4 * ti.math.pi * Q_rho)
         pi_rho = ti.sqrt(Q_rho)
 
-        b = (1.0 / self.Ma) * Q_B.norm() / pi_rho
-        b_x = (1.0 / self.Ma) * Q_B[j] / pi_rho
+        b = (1.0 / self.Ma) * Q_b.norm() / pi_rho
+        b_x = (1.0 / self.Ma) * Q_b[j] / pi_rho
         # Sound speed
         _p = self.u_computer.get_pressure(Q_rho)
         c = self.get_sound_speed(_p, Q_rho)
         # Alfen speed
-        c_a = (1.0 / self.Ma) * Q_B[j] / pi_rho
+        c_a = (1.0 / self.Ma) * Q_b[j] / pi_rho
 
         sq_root = ti.sqrt((b**2 + c**2)**2 - 4 * b_x**2 * c**2)
 
@@ -207,7 +211,7 @@ class SystemComputer:
         if self.dimensions > 1:
             result[1] = self.get_eigenvals(1, idx)
         
-        if self.dimensions == 2:
+        if self.dimensions > 2:
             result[2] = self.get_eigenvals(2, idx)
 
         return result
@@ -232,8 +236,8 @@ class SystemComputer:
         D_m = Q(idx) - Q(idx_left)
         D_p = Q(idx_right) - Q(idx)
 
-        # return Q(idx) + 0.25 * ( (1-self.k)*self.minmod(D_p / D_m)*D_m + (1+self.k)*self.minmod(D_m / D_p)*D_p)
-        return Q(idx)
+        return Q(idx) + 0.25 * ( (1-self.k)*self.minmod(D_p / D_m)*D_m + (1+self.k)*self.minmod(D_m / D_p)*D_p)
+        # return Q(idx)
 
     @ti.func
     def Q_R(self, Q: ti.template(), i, idx):
@@ -244,15 +248,15 @@ class SystemComputer:
         D_m = Q(idx_new) - Q(idx_left)
         D_p = Q(idx_right) - Q(idx_new)
 
-        # return Q(idx_new) - 0.25 * ( (1+self.k)*self.minmod(D_p / D_m)*D_m + (1-self.k)*self.minmod(D_m / D_p)*D_p)
-        return Q(idx_new)
+        return Q(idx_new) - 0.25 * ( (1+self.k)*self.minmod(D_p / D_m)*D_m + (1-self.k)*self.minmod(D_m / D_p)*D_p)
+        # return Q(idx_new)
 
     @ti.func
     def HLLD(self, flux_rho: ti.template(), flux_u: ti.template(), flux_B: ti.template(), 
-        Q_rho_L, Q_u_L, Q_B_L, Q_rho_R, Q_u_R, Q_B_R, i, idx=0):
+        Q_rho_L, Q_u_L, Q_b_L, Q_rho_R, Q_u_R, Q_b_R, i, idx=0):
 
-        c_f_L = self.get_c_fast(Q_rho_L, Q_u_L, Q_B_L, i)
-        c_f_R = self.get_c_fast(Q_rho_R, Q_u_R, Q_B_R, i)
+        c_f_L = self.get_c_fast(Q_rho_L, Q_u_L, Q_b_L, i)
+        c_f_R = self.get_c_fast(Q_rho_R, Q_u_R, Q_b_R, i)
 
         yz = get_idx_to_basis(i)
         x = i
@@ -267,24 +271,24 @@ class SystemComputer:
         v_L = Q_u_L[y] / Q_rho_L
         w_L = Q_u_L[z] / Q_rho_L
 
-        By_R = Q_B_R[y]
-        Bz_R = Q_B_R[z]
+        By_R = Q_b_R[y]
+        Bz_R = Q_b_R[z]
 
-        By_L = Q_B_L[y]
-        Bz_L = Q_B_L[z]
+        By_L = Q_b_L[y]
+        Bz_L = Q_b_L[z]
 
         s_L = ti.min(u_L - c_f_L, u_R - c_f_R)
-        s_R = ti.min(u_L + c_f_L, u_R + c_f_R)
-        # s_R = ti.max(u_L + c_f_L, u_R + c_f_R)
+        # s_R = ti.min(u_L + c_f_L, u_R + c_f_R)
+        s_R = ti.max(u_L + c_f_L, u_R + c_f_R)
 
-        F_rho_L = get_vec_col(flux_rho(Q_rho_L, Q_u_L, Q_B_L), i)
-        F_rho_R = get_vec_col(flux_rho(Q_rho_R, Q_u_R, Q_B_R), i)
+        F_rho_L = get_vec_col(flux_rho(Q_rho_L, Q_u_L, Q_b_L), i)
+        F_rho_R = get_vec_col(flux_rho(Q_rho_R, Q_u_R, Q_b_R), i)
 
-        F_u_L = get_mat_col(flux_u(Q_rho_L, Q_u_L, Q_B_L), i)
-        F_u_R = get_mat_col(flux_u(Q_rho_R, Q_u_R, Q_B_R), i)
+        F_u_L = get_mat_col(flux_u(Q_rho_L, Q_u_L, Q_b_L), i)
+        F_u_R = get_mat_col(flux_u(Q_rho_R, Q_u_R, Q_b_R), i)
 
-        F_b_L = get_mat_col(flux_B(Q_rho_L, Q_u_L, Q_B_L), i)
-        F_b_R = get_mat_col(flux_B(Q_rho_R, Q_u_R, Q_B_R), i)
+        F_b_L = get_mat_col(flux_B(Q_rho_L, Q_u_L, Q_b_L), i)
+        F_b_R = get_mat_col(flux_B(Q_rho_R, Q_u_R, Q_b_R), i)
 
         Q_rho_hll = (s_R*Q_rho_R - s_L*Q_rho_L - F_rho_R + F_rho_L) / (s_R - s_L)
         F_rho_hll = (s_R*F_rho_L - s_L*F_rho_R + s_R*s_L*(Q_rho_R - Q_rho_L)) / (s_R - s_L)
@@ -292,8 +296,8 @@ class SystemComputer:
         Q_u_hll = (s_R*Q_u_R - s_L*Q_u_L - F_u_R + F_u_L) / (s_R - s_L)
         F_u_hll = (s_R*F_u_L - s_L*F_u_R + s_R*s_L*(Q_u_R - Q_u_L)) / (s_R - s_L)
 
-        Q_B_hll = (s_R*Q_B_R - s_L*Q_B_L - F_b_R + F_b_L) / (s_R - s_L)
-        Bx = Q_B_L[x]
+        Q_b_hll = (s_R*Q_b_R - s_L*Q_b_L - F_b_R + F_b_L) / (s_R - s_L)
+        Bx = Q_b_L[x]
 
         u_star = F_rho_hll / Q_rho_hll
 
@@ -344,13 +348,13 @@ class SystemComputer:
         Q_u_R_star[y] = rho_v_R_star
         Q_u_R_star[z] = rho_w_R_star
 
-        Q_B_L_star = Q_B_L
-        Q_B_L_star[y] = By_L_star
-        Q_B_L_star[z] = Bz_L_star
+        Q_b_L_star = Q_b_L
+        Q_b_L_star[y] = By_L_star
+        Q_b_L_star[z] = Bz_L_star
 
-        Q_B_R_star = Q_B_R
-        Q_B_R_star[y] = By_R_star
-        Q_B_R_star[z] = Bz_R_star
+        Q_b_R_star = Q_b_R
+        Q_b_R_star[y] = By_R_star
+        Q_b_R_star[z] = Bz_R_star
 
         F_rho_C_star = Q_rho_hll*u_star
 
@@ -370,7 +374,7 @@ class SystemComputer:
         elif s_L_star > 0:
             result[0, 0] = F_rho_L + s_L*(Q_rho_hll - Q_rho_L)
             result[:, 1] = F_u_L + s_L*(Q_u_L_star - Q_u_L)
-            result[:, 2] = F_b_L + s_L*(Q_B_L_star - Q_B_L)
+            result[:, 2] = F_b_L + s_L*(Q_b_L_star - Q_b_L)
         elif s_R_star > 0:
             result[0, 0] = F_rho_C_star
             result[:, 1] = F_u_C_star
@@ -378,7 +382,7 @@ class SystemComputer:
         elif s_R > 0:
             result[0, 0] = F_rho_R + s_R*(Q_rho_hll - Q_rho_R)
             result[:, 1] = F_u_R + s_R*(Q_u_R_star - Q_u_R)
-            result[:, 2] = F_b_R + s_R*(Q_B_R_star - Q_B_R)
+            result[:, 2] = F_b_R + s_R*(Q_b_R_star - Q_b_R)
         else:
             result[0, 0] = F_rho_R
             result[:, 1] = F_u_R
@@ -488,35 +492,35 @@ class SystemComputer:
         Q_u_R = self.Q_R(self.Q_u, i, idx)
         Q_u_L = self.Q_L(self.Q_u, i, idx)
 
-        Q_B_R = self.Q_R(self.Q_B, i, idx)
-        Q_B_L = self.Q_L(self.Q_B, i, idx)
+        Q_b_R = self.Q_R(self.Q_b, i, idx)
+        Q_b_L = self.Q_L(self.Q_b, i, idx)
 
         result = self.HLLD(self.rho_computer.flux_convective, 
             self.u_computer.flux_convective, 
             self.B_computer.flux_convective,
-            Q_rho_L, Q_u_L, Q_B_L, Q_rho_R, Q_u_R, Q_B_R, i)
+            Q_rho_L, Q_u_L, Q_b_L, Q_rho_R, Q_u_R, Q_b_R, i)
 
         for j, k in ti.ndrange(2, 2):
             corner = idx - vec3i(1) + self.get_dx_st(i, j, k, left=False)
             V_rho = self.V_plus_sc(self.V_rho, corner)
-            V_u = self.V_plus_vec(self.V_B, corner)
-            V_B = self.V_plus_vec(self.V_B, corner)
+            V_u = self.V_plus_vec(self.V_b, corner)
+            V_b = self.V_plus_vec(self.V_b, corner)
 
             if ti.static(self.ideal==False):
                 gradU = self.grad_U(corner)
                 gradB = self.grad_B(corner)
 
                 result[:, 1] -= 0.25*get_mat_col(
-                    self.u_computer.flux_viscous(V_rho, V_u, V_B, gradU, gradB)
+                    self.u_computer.flux_viscous(V_rho, V_u, V_b, gradU, gradB)
                     , i)
                 
                 result[:, 2] -= 0.25*get_mat_col(
-                    self.B_computer.flux_viscous(V_rho, V_u, V_B, gradU, gradB)
+                    self.B_computer.flux_viscous(V_rho, V_u, V_b, gradU, gradB)
                     , i)
 
             if ti.static(self.hall):
                 result[:, 2] -= 0.25*get_mat_col(
-                    self.B_computer.flux_hall(V_rho, V_u, V_B, self.grad_B(corner), self.rot_B(corner))
+                    self.B_computer.flux_hall(V_rho, V_u, V_b, self.grad_B(corner), self.rot_B(corner))
                     , i)
                 
             if ti.static(self.les != NonHallLES.DNS):
@@ -526,11 +530,11 @@ class SystemComputer:
                 rotB = self.rot_B(corner)
 
                 result[:, 1] -= 0.25*get_mat_col(
-                    self.u_computer.flux_les(V_rho, V_u, V_B, gradU, gradB, rotU, rotB)
+                    self.u_computer.flux_les(V_rho, V_u, V_b, gradU, gradB, rotU, rotB)
                     , i)
 
                 result[:, 2] -= 0.25*get_mat_col(
-                    self.B_computer.flux_les(V_rho, V_u, V_B, gradU, gradB, rotU, rotB)
+                    self.B_computer.flux_les(V_rho, V_u, V_b, gradU, gradB, rotU, rotB)
                     , i)
         
         return result
@@ -543,35 +547,37 @@ class SystemComputer:
         Q_u_R = self.Q_R(self.Q_u, i, idx)
         Q_u_L = self.Q_L(self.Q_u, i, idx)
 
-        Q_B_R = self.Q_R(self.Q_B, i, idx)
-        Q_B_L = self.Q_L(self.Q_B, i, idx)
+        Q_b_R = self.Q_R(self.Q_b, i, idx)
+        Q_b_L = self.Q_L(self.Q_b, i, idx)
 
-        result = self.HLLD(self.rho_computer.flux_convective, 
-            self.u_computer.flux_convective, 
-            self.B_computer.flux_convective,
-            Q_rho_L, Q_u_L, Q_B_L, Q_rho_R, Q_u_R, Q_B_R, i)
+        # result = self.HLLD(self.rho_computer.flux_convective, 
+        #     self.u_computer.flux_convective, 
+        #     self.B_computer.flux_convective,
+        #     Q_rho_L, Q_u_L, Q_b_L, Q_rho_R, Q_u_R, Q_b_R, i)
+        
+        result = mat3x3(0)
 
         for j in ti.ndrange(2):
             corner = idx - vec3i([1, 1, 0]) + self.get_dx_st(i, j, 0, left=False)
             V_rho = self.V_plus_sc(self.V_rho, corner)
-            V_u = self.V_plus_vec(self.V_B, corner)
-            V_B = self.V_plus_vec(self.V_B, corner)
+            V_u = self.V_plus_vec(self.V_b, corner)
+            V_b = self.V_plus_vec(self.V_b, corner)
 
             if ti.static(self.ideal==False):
                 gradU = self.grad_U(corner)
                 gradB = self.grad_B(corner)
 
-                result[:, 1] -= 0.25*get_mat_col(
-                    self.u_computer.flux_viscous(V_rho, V_u, V_B, gradU, gradB)
+                result[:, 1] -= 0.5*get_mat_col(
+                    self.u_computer.flux_viscous(V_rho, V_u, V_b, gradU, gradB)
                     , i)
                 
-                result[:, 2] -= 0.25*get_mat_col(
-                    self.B_computer.flux_viscous(V_rho, V_u, V_B, gradU, gradB)
+                result[:, 2] -= 0.5*get_mat_col(
+                    self.B_computer.flux_viscous(V_rho, V_u, V_b, gradU, gradB)
                     , i)
 
             if ti.static(self.hall):
-                result[:, 2] -= 0.25*get_mat_col(
-                    self.B_computer.flux_hall(V_rho, V_u, V_B, self.grad_B(corner), self.rot_B(corner))
+                result[:, 2] -= 0.5*get_mat_col(
+                    self.B_computer.flux_hall(V_rho, V_u, V_b, self.grad_B(corner), self.rot_B(corner))
                     , i)
                 
             if ti.static(self.les != NonHallLES.DNS):
@@ -580,12 +586,12 @@ class SystemComputer:
                 rotU = self.rot_U(corner)
                 rotB = self.rot_B(corner)
 
-                result[:, 1] -= 0.25*get_mat_col(
-                    self.u_computer.flux_les(V_rho, V_u, V_B, gradU, gradB, rotU, rotB)
+                result[:, 1] -= 0.5*get_mat_col(
+                    self.u_computer.flux_les(V_rho, V_u, V_b, gradU, gradB, rotU, rotB)
                     , i)
 
-                result[:, 2] -= 0.25*get_mat_col(
-                    self.B_computer.flux_les(V_rho, V_u, V_B, gradU, gradB, rotU, rotB)
+                result[:, 2] -= 0.5*get_mat_col(
+                    self.B_computer.flux_les(V_rho, V_u, V_b, gradU, gradB, rotU, rotB)
                     , i)
         
         return result
@@ -598,35 +604,35 @@ class SystemComputer:
         Q_u_R = self.Q_R(self.Q_u, i, idx)
         Q_u_L = self.Q_L(self.Q_u, i, idx)
 
-        Q_B_R = self.Q_R(self.Q_B, i, idx)
-        Q_B_L = self.Q_L(self.Q_B, i, idx)
+        Q_b_R = self.Q_R(self.Q_b, i, idx)
+        Q_b_L = self.Q_L(self.Q_b, i, idx)
 
         result = self.HLLD(self.rho_computer.flux_convective, 
             self.u_computer.flux_convective, 
             self.B_computer.flux_convective,
-            Q_rho_L, Q_u_L, Q_B_L, Q_rho_R, Q_u_R, Q_B_R, i)
+            Q_rho_L, Q_u_L, Q_b_L, Q_rho_R, Q_u_R, Q_b_R, i)
 
 
         corner = idx - vec3i([1, 0, 0]) + self.get_dx_st(i, 0, 0, left=False)
         V_rho = self.V_plus_sc(self.V_rho, corner)
-        V_u = self.V_plus_vec(self.V_B, corner)
-        V_B = self.V_plus_vec(self.V_B, corner)
+        V_u = self.V_plus_vec(self.V_b, corner)
+        V_b = self.V_plus_vec(self.V_b, corner)
 
         if ti.static(self.ideal==False):
             gradU = self.grad_U(corner)
             gradB = self.grad_B(corner)
 
             result[:, 1] -= 0.25*get_mat_col(
-                self.u_computer.flux_viscous(V_rho, V_u, V_B, gradU, gradB)
+                self.u_computer.flux_viscous(V_rho, V_u, V_b, gradU, gradB)
                 , i)
             
             result[:, 2] -= 0.25*get_mat_col(
-                self.B_computer.flux_viscous(V_rho, V_u, V_B, gradU, gradB)
+                self.B_computer.flux_viscous(V_rho, V_u, V_b, gradU, gradB)
                 , i)
 
         if ti.static(self.hall):
             result[:, 2] -= 0.25*get_mat_col(
-                self.B_computer.flux_hall(V_rho, V_u, V_B, self.grad_B(corner), self.rot_B(corner))
+                self.B_computer.flux_hall(V_rho, V_u, V_b, self.grad_B(corner), self.rot_B(corner))
                 , i)
             
         if ti.static(self.les != NonHallLES.DNS):
@@ -636,11 +642,11 @@ class SystemComputer:
             rotB = self.rot_B(corner)
 
             result[:, 1] -= 0.25*get_mat_col(
-                self.u_computer.flux_les(V_rho, V_u, V_B, gradU, gradB, rotU, rotB)
+                self.u_computer.flux_les(V_rho, V_u, V_b, gradU, gradB, rotU, rotB)
                 , i)
 
             result[:, 2] -= 0.25*get_mat_col(
-                self.B_computer.flux_les(V_rho, V_u, V_B, gradU, gradB, rotU, rotB)
+                self.B_computer.flux_les(V_rho, V_u, V_b, gradU, gradB, rotU, rotB)
                 , i)
         
         return result
@@ -745,41 +751,41 @@ class Compute(ABC):
 
     @ti.func
     @abstractmethod
-    def flux_convective(self, Q_rho, Q_u, Q_B):
+    def flux_convective(self, Q_rho, Q_u, Q_b):
         ...
 
     @ti.func
     @abstractmethod
-    def flux_viscous(self, V_rho, V_u, V_B, grad_U, grad_B):
+    def flux_viscous(self, V_rho, V_u, V_b, grad_U, grad_B):
         ...
 
     @ti.func
     @abstractmethod
-    def flux_hall(self, V_rho, V_u, V_B, grad_B, rot_B):
+    def flux_hall(self, V_rho, V_u, V_b, grad_B, rot_B):
         ...
 
     @ti.func
     @abstractmethod
-    def flux_les(self, V_rho, V_u, V_B, grad_U, grad_B, rot_U, rot_B):
+    def flux_les(self, V_rho, V_u, V_b, grad_U, grad_B, rot_U, rot_B):
         ...
 
 
 @ti.data_oriented
 class RhoCompute(Compute):
     @ti.func
-    def flux_convective(self, Q_rho, Q_u, Q_B):
+    def flux_convective(self, Q_rho, Q_u, Q_b):
         return Q_u
 
     @ti.func
-    def flux_viscous(self, V_rho, V_u, V_B, grad_U, grad_B):
+    def flux_viscous(self, V_rho, V_u, V_b, grad_U, grad_B):
         return vec3(0)
 
     @ti.func
-    def flux_hall(self, V_rho, V_u, V_B, grad_B, rot_B):
+    def flux_hall(self, V_rho, V_u, V_b, grad_B, rot_B):
         return vec3(0)
 
     @ti.func
-    def flux_les(self, V_rho, V_u, V_B, grad_U, grad_B, rot_U, rot_B):
+    def flux_les(self, V_rho, V_u, V_b, grad_U, grad_B, rot_U, rot_B):
         return vec3(0)
 
 
@@ -796,18 +802,18 @@ class MomentumCompute(Compute):
         return ti.pow(rho, self.gamma)
 
     @ti.func
-    def flux_convective(self, Q_rho, Q_u, Q_B):
+    def flux_convective(self, Q_rho, Q_u, Q_b):
         p = self.get_pressure(Q_rho)
-        BB = Q_B.outer_product(Q_B)
+        BB = Q_b.outer_product(Q_b)
         rho_UU = Q_u.outer_product(Q_u) / Q_rho
         return (
             rho_UU
-            + (p + (0.5/self.Ma**2) * Q_B.norm_sqr()) * kron
+            + (p + (0.5/self.Ma**2) * Q_b.norm_sqr()) * kron
             - BB
         )
 
     @ti.func
-    def flux_viscous(self, V_rho, V_u, V_B, grad_U, grad_B):
+    def flux_viscous(self, V_rho, V_u, V_b, grad_U, grad_B):
         divU = grad_U.trace()
 
         return (
@@ -815,11 +821,11 @@ class MomentumCompute(Compute):
         ) / self.Re
     
     @ti.func
-    def flux_hall(self, V_rho, V_u, V_B, grad_B, rot_B):
+    def flux_hall(self, V_rho, V_u, V_b, grad_B, rot_B):
         return mat3x3(0)
 
     @ti.func
-    def flux_les(self, V_rho, V_u, V_B, grad_U, grad_B, rot_U, rot_B):
+    def flux_les(self, V_rho, V_u, V_b, grad_U, grad_B, rot_U, rot_B):
         return mat3x3(0)
 
 
@@ -831,25 +837,25 @@ class BCompute(Compute):
         self.delta_hall = delta_hall
 
     @ti.func
-    def flux_convective(self, Q_rho, Q_u, Q_B):
-        Bu = Q_B.outer_product(Q_u) / Q_rho
+    def flux_convective(self, Q_rho, Q_u, Q_b):
+        Bu = Q_b.outer_product(Q_u) / Q_rho
         return Bu - Bu.transpose()
 
     @ti.func
-    def flux_viscous(self, V_rho, V_u, V_B, grad_U, grad_B):
+    def flux_viscous(self, V_rho, V_u, V_b, grad_U, grad_B):
         return (
             grad_B - grad_B.transpose()
         ) / self.Rem
 
     @ti.func
-    def flux_hall(self, V_rho, V_u, V_B, grad_B, rot_B):
+    def flux_hall(self, V_rho, V_u, V_b, grad_B, rot_B):
         j = rot_B
         v_h = - self.delta_hall * j / V_rho
-        v_hB = v_h.outer_product(V_B)  
+        v_hB = v_h.outer_product(V_b)  
         return (
             v_hB - v_hB.transpose()
         )
 
     @ti.func
-    def flux_les(self, V_rho, V_u, V_B, grad_U, grad_B, rot_U, rot_B):
+    def flux_les(self, V_rho, V_u, V_b, grad_U, grad_B, rot_U, rot_B):
         return mat3x3(0)
