@@ -201,12 +201,45 @@ class SystemComputer:
         return c_f
 
     @ti.func
+    def get_c_fast_cfl(self, Q_rho, Q_u, Q_b, j):
+        # pi_rho = ti.sqrt(4 * ti.math.pi * Q_rho)
+        pi_rho = ti.sqrt(Q_rho)
+
+        b = (1.0 / self.Ma) * ( Q_b.norm() / pi_rho )
+        b_x = (1.0 / self.Ma) * ( Q_b[j] / pi_rho )
+        # Sound speed
+        _p = self.u_computer.get_pressure(Q_rho)
+        c = self.get_sound_speed(_p, Q_rho)
+
+        yz = get_idx_to_basis(j)
+        y = yz[0]
+        z = yz[1]
+
+        b_y = (1.0 / self.Ma) * ( Q_b[y] / pi_rho )
+        b_z = (1.0 / self.Ma) * ( Q_b[z] / pi_rho )
+
+        sq_root = ti.sqrt((b**2 + c**2)**2 + 4 * (b_y**2 + b_z**2) * c**2)
+
+        # Magnetosonic wawes
+        c_f = ti.sqrt( 0.5 * ((b**2 + c**2) + sq_root))
+
+        return c_f
+
+    @ti.func
     def get_s_j_max(self, j, idx):
         u = self.u[idx]
         b = self.B[idx]
         rho = self.rho[idx]
         
         return ti.abs(u[j]) + self.get_c_fast(rho, u, b, j)
+
+    @ti.func
+    def get_s_j_max_cfl(self, j, idx):
+        u = self.u[idx]
+        b = self.B[idx]
+        rho = self.rho[idx]
+        
+        return ti.abs(u[j]) + self.get_c_fast_cfl(rho, u, b, j)
 
     @ti.kernel
     def get_cfl_cond(self) -> vec3:
@@ -400,7 +433,7 @@ class SystemComputer:
 
                 F_L = mat3x2(0)
                 F_R = mat3x2(0)
-                for j in range(ti.static(self.dimensions)):
+                for j in ti.ndrange(ti.static(self.dimensions)):
                     idx_r = idx
                     idx_l = idx - get_basis(j)
             
@@ -423,10 +456,12 @@ class SystemComputer:
                 out_B[idx] = res[:, 2]
 
                 E = vec3(0)
-                if self.dimensions == 3:
+                if ti.static(self.dimensions == 3):
                     E[0] = 0.25 * (F_R[2, 1] + F_L[2, 1] - F_L[1, 1] - F_R[1, 1])
                     E[1] = 0.25 * (F_R[0, 1] + F_L[0, 1] - F_L[2, 0] - F_R[2, 0])
+
                 E[2] = 0.25 * (F_R[1, 0] + F_L[1, 0] - F_L[0, 0] - F_R[0, 0])
+                
                 out_E[idx] = E
 
     @ti.kernel

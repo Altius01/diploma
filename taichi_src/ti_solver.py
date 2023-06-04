@@ -68,10 +68,9 @@ class TiSolver:
         self.initials_OT = self.initials_OT_2D
 
         if self.config.dim == 2:
-            # self.div_cleaning = True
+            self.div_cleaning = True
             self.update_B_staggered = self.update_B_staggered_2D
             self.update_B = self.update_B_2D
-            self.update_B_staggered = self.update_B_staggered_2D
             self.initials_OT = self.initials_OT_2D
 
             self.ghosts_system = self.fv_computer.ghosts_periodic_call
@@ -79,7 +78,6 @@ class TiSolver:
             self.div_cleaning = True
             self.update_B_staggered = self.update_B_staggered_3D
             self.update_B = self.update_B_3D
-            self.update_B_staggered = self.update_B_staggered_3D
             self.initials_OT = self.initials_OT_3D
 
             self.ghosts_system = self.fv_computer.ghosts_periodic_call
@@ -238,19 +236,19 @@ class TiSolver:
     def initials_ghosts(self):
         self.ghosts_system(self.rho[0], self.u[0], self.B[0])
         if self.div_cleaning == True:
-            self.update_B_staggered_call()
+            self.update_B_staggered_call(0)
 
-    def update_B_staggered_call(self):
-        self.update_B_staggered()
-        self.fv_computer.ghosts_periodic_foo_call(self.B_staggered[0])
+    def update_B_staggered_call(self, j=0):
+        self.update_B_staggered(j)
+        self.fv_computer.ghosts_periodic_foo_call(self.B_staggered[j])
 
-    def update_B_call(self):
-        self.update_B()
-        self.fv_computer.ghosts_periodic_foo_call(self.B[0])
+    def update_B_call(self, j=0):
+        self.update_B(j)
+        self.fv_computer.ghosts_periodic_foo_call(self.B[j])
 
     @ti.kernel
-    def update_B_staggered_3D(self):
-        for idx in ti.grouped(self.B[0]):
+    def update_B_staggered_3D(self, j=0):
+        for idx in ti.grouped(self.B[j]):
             if not self.fv_computer.check_ghost_idx(idx):
                 result = vec3(0)
                 for i in ti.ndrange(3):
@@ -260,13 +258,13 @@ class TiSolver:
                     if i == 1:
                         idx_right = idx - get_basis(i)
 
-                    result[i] = 0.5*(self.B[0][idx_left][i] + self.B[0][idx_right][i])
+                    result[i] = 0.5*(self.B[j][idx_left][i] + self.B[j][idx_right][i])
 
-                self.B_staggered[0][idx] = result
+                self.B_staggered[j][idx] = result
 
     @ti.kernel
-    def update_B_3D(self):
-        for idx in ti.grouped(self.B[0]):
+    def update_B_3D(self, j=0):
+        for idx in ti.grouped(self.B[j]):
             if not self.fv_computer.check_ghost_idx(idx):
                 result = vec3(0)
                 for i in ti.ndrange(3):
@@ -276,13 +274,13 @@ class TiSolver:
                     if i == 1:
                         idx_right = idx + get_basis(i)
 
-                    result[i] = 0.5*(self.B_staggered[0][idx_left][i] + self.B_staggered[0][idx_right][i])
+                    result[i] = 0.5*(self.B_staggered[j][idx_left][i] + self.B_staggered[j][idx_right][i])
 
-                self.B[0][idx] = result
+                self.B[j][idx] = result
 
     @ti.kernel
-    def update_B_staggered_2D(self):
-        for idx in ti.grouped(self.B[0]):
+    def update_B_staggered_2D(self, j=0):
+        for idx in ti.grouped(self.B[j]):
             if not self.fv_computer.check_ghost_idx(idx):
                 result = vec3(0)
                 for i in ti.ndrange(2):
@@ -292,14 +290,14 @@ class TiSolver:
                     if i == 1:
                         idx_right = idx - get_basis(i)
 
-                    result[i] = 0.5*(self.B[0][idx_left][i] + self.B[0][idx_right][i])
+                    result[i] = 0.5*(self.B[j][idx_left][i] + self.B[j][idx_right][i])
 
-                result[2] = self.B[0][idx][2]
-                self.B_staggered[0][idx] = result
+                result[2] = 0
+                self.B_staggered[j][idx] = result
 
     @ti.kernel
-    def update_B_2D(self):
-        for idx in ti.grouped(self.B[0]):
+    def update_B_2D(self, j=0):
+        for idx in ti.grouped(self.B[j]):
             if not self.fv_computer.check_ghost_idx(idx):
                 result = vec3(0)
                 for i in ti.ndrange(2):
@@ -309,10 +307,10 @@ class TiSolver:
                     if i == 1:
                         idx_right = idx + get_basis(i)
 
-                    result[i] = 0.5*(self.B_staggered[0][idx_left][i] + self.B_staggered[0][idx_right][i])
+                    result[i] = 0.5*(self.B_staggered[j][idx_left][i] + self.B_staggered[j][idx_right][i])
 
-                result[2] = self.B_staggered[0][idx][2]
-                self.B[0][idx] = result
+                result[2] = self.B[j][idx][2]
+                self.B[j][idx] = result
 
     @ti.func
     def get_B0(self, idx):
@@ -389,8 +387,6 @@ class TiSolver:
         self.ghosts_system(self.rho[1], self.u[1], self.B[1])
 
         if self.div_cleaning == True:
-            if (self.debug_fv_step):
-                print("B div cleaning...")
             self.fv_computer.ghosts_periodic_foo_call(self.E)
 
             self.fv_computer.computeB_staggered(self.E, self.B_staggered[1])
@@ -406,7 +402,7 @@ class TiSolver:
 
 
         if self.div_cleaning == True:
-            self.update_B_call()
+            self.update_B_call(0)
 
         self.fv_computer.computeP(self.p[0], self.get_B0)
         self.fv_computer.ghosts_periodic_foo_call(self.p[0])
