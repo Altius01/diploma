@@ -405,16 +405,16 @@ class LesComputer(SystemComputer):
 
     @ti.kernel
     def get_cfl_cond_les(self) -> double:
-        if not self.check_ghost_idx(idx):
-            max_nu = double(0.0)
-            max_eta = double(0.0)
-            for idx in ti.grouped(self.rho):
+        max_nu = double(0.0)
+        max_eta = double(0.0)
+        for idx in ti.grouped(self.rho):
+            if not self.check_ghost_idx(idx):
                 nu = 2.0*ti.abs(self.get_alpha_ij(idx)*self.C - self.Y*self.get_tr_alpha(idx)) / self.Q_rho(idx)
                 eta = 2.0*ti.abs(self.get_alpha_ij(idx)*self.C - self.Y*self.get_tr_alpha(idx))
                 ti.atomic_max(max_nu, nu)
                 ti.atomic_max(max_eta, eta)
 
-            return ti.abs(max_eta + max_nu)
+        return ti.abs(max_eta + max_nu)
 
 @ti.data_oriented
 class LesMomentumCompute(MomentumCompute):
