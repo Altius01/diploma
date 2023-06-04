@@ -146,23 +146,16 @@ class TiSolver:
 
         dT_visc = dT
         if (self.ideal == False or self.hall):
+            nu_les = 0.0
+            if (self.les_model != NonHallLES.DNS):
+                nu_les = self.fv_computer.get_cfl_cond_les()
             dT_visc = self.CFL*ti.min(
-                self.h[0]**2 / (2*((4.0/3.0)*(self.Rem/self.Re) + 1.0)*self.nu_0), 
-                self.h[1]**2 / (2*((4.0/3.0)*(self.Rem/self.Re) + 1.0)*self.nu_0), 
-                self.h[2]**2 / (2*((4.0/3.0)*(self.Rem/self.Re) + 1.0)*self.nu_0)
-            )
-
-        dT_visc_les = dT
-        if (self.les_model != NonHallLES.DNS):
-            nu_les = self.fv_computer.get_cfl_cond_les()
-            dT_visc_les = self.CFL*ti.min(
-                self.h[0]**2 / nu_les, 
-                self.h[1]**2 / nu_les,
-                self.h[2]**2 / nu_les
+                self.h[0]**2 / (2*((4.0/3.0)*(self.Rem/self.Re) + 1.0)*self.nu_0 + nu_les), 
+                self.h[1]**2 / (2*((4.0/3.0)*(self.Rem/self.Re) + 1.0)*self.nu_0 + nu_les), 
+                self.h[2]**2 / (2*((4.0/3.0)*(self.Rem/self.Re) + 1.0)*self.nu_0 + nu_les)
             )
         
-        
-        return ti.min(dT, dT_visc, dT_visc_les)
+        return ti.min(dT, dT_visc)
 
     @ti.func
     def _check_ghost(self, shape, idx):

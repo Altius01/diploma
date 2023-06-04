@@ -380,6 +380,7 @@ class LesComputer(SystemComputer):
         
         MM_mean = Sum.sum_sc_field(self.MM_field)
         knl_tr_field(self.Lu, self.Lkk_field)
+        # knl_tr_field(self.Mu, self.Mu_kk)
 
         Lkk_mean = Sum.sum_mat_field(self.Lu).trace()
 
@@ -395,9 +396,14 @@ class LesComputer(SystemComputer):
 
         # print(LuM, Lkk_mean, LbmB)
         # print(MM_mean, Mu_kk_mean, mBmB)
-        self.C = LuM / MM_mean
-        self.Y = Lkk_mean / Mu_kk_mean
-        self.D = LbmB / mBmB
+        # self.C = LuM / MM_mean
+        # self.Y = Lkk_mean / Mu_kk_mean
+        # self.D = LbmB / mBmB
+
+        self.C = 1e-3
+        self.Y = 1e-4
+        self.D = 1e-3
+
 
     def update_les(self):
         if self.les != NonHallLES.DNS:
