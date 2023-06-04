@@ -223,7 +223,7 @@ class SystemComputer:
         # Magnetosonic wawes
         c_f = ti.sqrt( 0.5 * ((b**2 + c**2) + sq_root))
 
-        return c_f
+        return 4*c_f
 
     @ti.func
     def get_s_j_max(self, j, idx):
@@ -312,8 +312,8 @@ class SystemComputer:
         Bz_L = Q_b_L[z]
 
         s_L = ti.min(u_L - c_f_L, u_R - c_f_R)
-        s_R = ti.min(u_L + c_f_L, u_R + c_f_R)
-        # s_R = ti.max(u_L + c_f_L, u_R + c_f_R)
+        # s_R = ti.min(u_L + c_f_L, u_R + c_f_R)
+        s_R = ti.max(u_L + c_f_L, u_R + c_f_R)
 
         F_rho_L = get_vec_col(flux_rho(Q_rho_L, Q_u_L, Q_b_L), i)
         F_rho_R = get_vec_col(flux_rho(Q_rho_R, Q_u_R, Q_b_R), i)
@@ -433,7 +433,7 @@ class SystemComputer:
 
                 F_L = mat3x2(0)
                 F_R = mat3x2(0)
-                for j in ti.ndrange(ti.static(self.dimensions)):
+                for j in ti.ndrange(self.dimensions):
                     idx_r = idx
                     idx_l = idx - get_basis(j)
             
