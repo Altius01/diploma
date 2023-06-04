@@ -206,7 +206,7 @@ def grad_vec_1D(foo: ti.template(), h: ti.template(), idx):
     for i, j in (ti.ndrange(1, result.m)):
         result[i, j] = dx_vec_1D(foo, j, 0, get_elem_1d(h, i), idx)
 
-    return result
+    return result.transpose()
 
 @ti.func
 def grad_vec_2D(foo: ti.template(), h: ti.template(), idx):
@@ -215,7 +215,7 @@ def grad_vec_2D(foo: ti.template(), h: ti.template(), idx):
     for i, j in (ti.ndrange(2, result.m)):
         result[i, j] = dx_vec_2D(foo, j, i, get_elem_1d(h, i), idx)
 
-    return result
+    return result.transpose()
 
 @ti.func
 def grad_vec_3D(foo: ti.template(), h: ti.template(), idx):
@@ -224,7 +224,7 @@ def grad_vec_3D(foo: ti.template(), h: ti.template(), idx):
     for i, j in (ti.ndrange(3, result.m)):
         result[i, j] = dx_vec_3D(foo, j, i, get_elem_1d(h, i), idx)
 
-    return result
+    return result.transpose()
 
 @ti.func
 def div_vec_1D(foo: ti.template(), h: ti.template(), idx):

@@ -312,8 +312,8 @@ class SystemComputer:
         Bz_L = Q_b_L[z]
 
         s_L = ti.min(u_L - c_f_L, u_R - c_f_R)
-        # s_R = ti.min(u_L + c_f_L, u_R + c_f_R)
-        s_R = ti.max(u_L + c_f_L, u_R + c_f_R)
+        s_R = ti.min(u_L + c_f_L, u_R + c_f_R)
+        # s_R = ti.max(u_L + c_f_L, u_R + c_f_R)
 
         F_rho_L = get_vec_col(flux_rho(Q_rho_L, Q_u_L, Q_b_L), i)
         F_rho_R = get_vec_col(flux_rho(Q_rho_R, Q_u_R, Q_b_R), i)
@@ -426,7 +426,9 @@ class SystemComputer:
     @ti.kernel
     def computeHLLD(self, out_rho: ti.template(), out_u: ti.template(), 
         out_B: ti.template(), out_E: ti.template()):
-        Flux_E = vec3(0)
+        Flux_E = mat3x3(0)
+        Flux_E_C = mat3x3(0)
+        s = vec3(0)
         for idx in ti.grouped(self.rho):
             if not self.check_ghost_idx(idx):
                 res = mat3x3(0)
@@ -441,7 +443,9 @@ class SystemComputer:
 
                     flux = (flux_r - flux_l) / get_elem_1d(self.h, j)
 
-                    Flux_E[j] = flux[j, 2]
+                    s[j] = ti.math.sign(flux_r[0, 0])
+                    Flux_E[j, :] = flux_r[:, 2]
+                    Flux_E_C[j, :] = flux[:, 2]
                     res -= flux
 
                 out_rho[idx] = res[0, 0]
@@ -450,13 +454,16 @@ class SystemComputer:
 
                 i, j, k = idx
                 ijk = idx
+
                 im1jk = vec3i([i-1, j, k]) 
                 ijm1k = vec3i([i, j-1, k]) 
-                ijkm1 = vec3i([i, j, k-1])
+
+                im1jm1k = vec3i([i-1, j-1, k]) 
 
                 im1jk = get_ghost_new_idx(self.ghost, self.shape, im1jk)
                 ijm1k = get_ghost_new_idx(self.ghost, self.shape, ijm1k)
-                ijkm1 = get_ghost_new_idx(self.ghost, self.shape, ijkm1)
+
+                im1jm1k = get_ghost_new_idx(self.ghost, self.shape, im1jm1k)
 
                 # E = vec3(0)
                 # if ti.static(self.dimensions == 3):
@@ -465,10 +472,24 @@ class SystemComputer:
 
                 # E[2] = 0.25 * (F_R[1, 0] + F_L[1, 0] - F_L[0, 0] - F_R[0, 0])
 
-                ti.atomic_add(out_E[ijk][2], 0.25*(Flux_E[0] - Flux_E[1]))
-                ti.atomic_add(out_E[im1jk][2], 0.25*(Flux_E[0]))
-                ti.atomic_sub(out_E[ijm1k][2], 0.25*(Flux_E[1]))
+                dEzdx = - 2*(Flux_E[0, 1] - Flux_E_C[0, 1]) / self.h[0]
+                dEzdy = 2*(Flux_E[1, 0] - Flux_E_C[1, 0]) / self.h[1]
 
+                ti.atomic_add(out_E[ijk][2], 0.25*(Flux_E[1, 0] - Flux_E[0, 1]))
+                ti.atomic_add(out_E[im1jk][2], 0.25*(Flux_E[1, 0]))
+                ti.atomic_add(out_E[ijm1k][2], -0.25*(Flux_E[0, 1]))
+
+                # ti.atomic_add(out_E[ijk][2], 0.125*self.h[1]*0.5*(1+s[0])*dEzdy)
+                # ti.atomic_add(out_E[im1jk][2], 0.125*self.h[1]*0.5*(1-s[0])*dEzdy)
+
+                # ti.atomic_add(out_E[ijm1k][2], -0.125*self.h[1]*0.5*(1+s[0])*dEzdy)
+                # ti.atomic_add(out_E[im1jm1k][2], -0.125*self.h[1]*0.5*(1-s[0])*dEzdy)
+
+                # ti.atomic_add(out_E[ijk][2], 0.125*self.h[0]*0.5*(1+s[1])*dEzdx)
+                # ti.atomic_add(out_E[ijm1k][2], 0.125*self.h[0]*0.5*(1-s[1])*dEzdx)
+
+                # ti.atomic_add(out_E[im1jk][2], -0.125*self.h[0]*0.5*(1+s[1])*dEzdx)
+                # ti.atomic_add(out_E[im1jm1k][2], -0.125*self.h[0]*0.5*(1-s[1])*dEzdx)
 
     @ti.kernel
     def computeB_staggered_3D(self, E: ti.template(), B_stag_out: ti.template()):
@@ -613,7 +634,7 @@ class SystemComputer:
                 result[:, 2] -= 0.5*get_mat_col(
                     self.B_computer.flux_viscous(V_rho, V_u, V_b, gradU, gradB)
                     , i)
-
+                
             if ti.static(self.hall):
                 result[:, 2] -= 0.5*get_mat_col(
                     self.B_computer.flux_hall(V_rho, V_u, V_b, self.grad_B(corner), self.rot_B(corner))
@@ -661,16 +682,16 @@ class SystemComputer:
             gradU = self.grad_U(corner)
             gradB = self.grad_B(corner)
 
-            result[:, 1] -= 0.25*get_mat_col(
+            result[:, 1] -= get_mat_col(
                 self.u_computer.flux_viscous(V_rho, V_u, V_b, gradU, gradB)
                 , i)
             
-            result[:, 2] -= 0.25*get_mat_col(
+            result[:, 2] -= get_mat_col(
                 self.B_computer.flux_viscous(V_rho, V_u, V_b, gradU, gradB)
                 , i)
 
         if ti.static(self.hall):
-            result[:, 2] -= 0.25*get_mat_col(
+            result[:, 2] -= get_mat_col(
                 self.B_computer.flux_hall(V_rho, V_u, V_b, self.grad_B(corner), self.rot_B(corner))
                 , i)
             
@@ -680,11 +701,11 @@ class SystemComputer:
             rotU = self.rot_U(corner)
             rotB = self.rot_B(corner)
 
-            result[:, 1] -= 0.25*get_mat_col(
+            result[:, 1] -= get_mat_col(
                 self.u_computer.flux_les(V_rho, V_u, V_b, gradU, gradB, rotU, rotB)
                 , i)
 
-            result[:, 2] -= 0.25*get_mat_col(
+            result[:, 2] -= get_mat_col(
                 self.B_computer.flux_les(V_rho, V_u, V_b, gradU, gradB, rotU, rotB)
                 , i)
         
@@ -693,11 +714,11 @@ class SystemComputer:
     @ti.kernel
     def computeP(self, out: ti.template(), foo_B: ti.template()):
         for idx in ti.grouped(out):
-            # if not self.check_ghost_idx(idx):
+            if not self.check_ghost_idx(idx):
                 # out[idx] = ti.math.pow(ti.cast(rho_new[idx], ti.f32), ti.cast(self.gamma, ti.f32))
-                # out[idx] = 0.5*foo_B(idx).norm_sqr()
+                out[idx] = 0.5*foo_B(idx).norm_sqr()
                 # out[idx] = self.div_vec(foo_B, self.h, idx)
-            out[idx] = foo_B(idx)
+            # out[idx] = foo_B(idx)
 
     @ti.kernel
     def compute_U(self, rho_u: ti.template(), rho: ti.template()):
@@ -709,6 +730,17 @@ class SystemComputer:
         for idx in ti.grouped(out):
             if self.check_ghost_idx(idx):
                 out[idx] = out[get_ghost_new_idx(self.ghost, self.shape, idx)]
+
+    @ti.kernel    
+    def ghosts_mirror_foo(self, out: ti.template()):
+        for idx in ti.grouped(out):
+            idx_new = get_mirror_new_idx(self.ghost, self.shape, idx)
+
+            if idx_new[0] != idx[0] or idx_new[1] != idx[1] or idx_new[2] != idx[2]:
+                out[idx] = out[idx_new]
+
+    def ghosts_mirror_foo_call(self, out):
+        self.ghosts_mirror_foo(out)
 
     def ghosts_periodic_foo_call(self, out):
         self.ghosts_periodic_foo(out)
@@ -728,26 +760,7 @@ class SystemComputer:
     @ti.kernel    
     def ghosts_wall(self, rho: ti.template(), u: ti.template(), B: ti.template()):
         for idx in ti.grouped(rho):
-            i, j, k = idx
-            if i < self.ghost[0]:
-                i = 2*self.ghost[0] - (i+1)
-            
-            if i >= self.shape[0] - self.ghost[0]:
-                i = 2*(self.shape[0]-self.ghost[0]) - (i+1)
-
-            if j < self.ghost[1]:
-                j = 2*self.ghost[1] - (j+1)
-
-            if j >= self.shape[1] - self.ghost[1]:
-                j = 2*(self.shape[1]-self.ghost[1]) - (j+1)
-
-            if k < self.ghost[2]:
-                k = 2*self.ghost[2] - (k+1)
-
-            if k >= self.shape[2] - self.ghost[2]:
-                k = 2*(self.shape[2]-self.ghost[2]) - (k+1)
-
-            idx_new = vec3i([i, j, k])
+            idx_new = get_mirror_new_idx(self.ghost, self.shape, idx)
 
             if idx_new[0] != idx[0] or idx_new[1] != idx[1] or idx_new[2] != idx[2]:
                 rho[idx] = rho[idx_new]

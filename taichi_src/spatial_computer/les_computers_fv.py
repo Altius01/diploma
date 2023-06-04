@@ -240,7 +240,7 @@ class LesComputer(SystemComputer):
     @ti.func
     def get_alpha(self, idx):
         return self.u_computer.get_alpha(
-            self.V_rho(idx), self.V_u(idx), self.V_B(idx), self.grad_U(idx), self.grad_B(idx), self.rot_U(idx), self.rot_B(idx)
+            self.V_rho(idx), self.V_u(idx), self.V_b(idx), self.grad_U(idx), self.grad_B(idx), self.rot_U(idx), self.rot_B(idx)
         )
 
     @ti.func
@@ -255,7 +255,7 @@ class LesComputer(SystemComputer):
     @ti.func
     def get_phi(self, idx):
         return self.B_computer.get_phi(
-            self.V_rho(idx), self.V_u(idx), self.V_B(idx), self.grad_U(idx), self.grad_B(idx), self.rot_U(idx), self.rot_B(idx)
+            self.V_rho(idx), self.V_u(idx), self.V_b(idx), self.grad_U(idx), self.grad_B(idx), self.rot_U(idx), self.rot_B(idx)
         )
 
     @ti.func
@@ -269,7 +269,7 @@ class LesComputer(SystemComputer):
     @ti.func
     def get_tr_alpha(self, idx):
         return self.u_computer.get_tr_alpha(
-            self.V_rho(idx), self.V_u(idx), self.V_B(idx), self.grad_U(idx), self.grad_B(idx), self.rot_U(idx), self.rot_B(idx)
+            self.V_rho(idx), self.V_u(idx), self.V_b(idx), self.grad_U(idx), self.grad_B(idx), self.rot_U(idx), self.rot_B(idx)
         )
 
     def init_les_arrays(self):
@@ -334,7 +334,7 @@ class LesComputer(SystemComputer):
         
         self.filter_sc(self.Q_rho, filter_size=filter_size, out=self.rho_hat)
         self.filter_vec(self.Q_u, filter_size=filter_size, out=self.rhoU_hat)
-        self.filter_vec(self.Q_B, filter_size=filter_size, out=self.B_hat)
+        self.filter_vec(self.Q_b, filter_size=filter_size, out=self.B_hat)
 
         self.filter_mat(self.Lu_a, filter_size=filter_size, out=self.Lu_a_hat)
         self.filter_mat(self.Lu_b, filter_size=filter_size, out=self.Lu_b_hat)
@@ -403,6 +403,19 @@ class LesComputer(SystemComputer):
         if self.les != NonHallLES.DNS:
             self.get_les_consts()
 
+    @ti.kernel
+    def get_cfl_cond_les(self) -> double:
+        if not self.check_ghost_idx(idx):
+            max_nu = double(0.0)
+            max_eta = double(0.0)
+            for idx in ti.grouped(self.rho):
+                nu = 2.0*ti.abs(self.get_alpha_ij(idx)*self.C - self.Y*self.get_tr_alpha(idx)) / self.Q_rho(idx)
+                eta = 2.0*ti.abs(self.get_alpha_ij(idx)*self.C - self.Y*self.get_tr_alpha(idx))
+                ti.atomic_max(max_nu, nu)
+                ti.atomic_max(max_eta, eta)
+
+            return ti.abs(max_eta + max_nu)
+
 @ti.data_oriented
 class LesMomentumCompute(MomentumCompute):
     def init_data(self, C, Y):
@@ -410,39 +423,40 @@ class LesMomentumCompute(MomentumCompute):
         self.Y = Y
 
     @ti.func
-    def flux_les(self, V_rho, V_u, V_B, grad_U, grad_B, rot_U, rot_B):
+    def flux_les(self, V_rho, V_u, V_b, grad_U, grad_B, rot_U, rot_B):
         S = 0.5*(grad_U + grad_U.transpose())
         S_abs = ti.sqrt(2)*S.norm()
-        nu = self.get_nu(V_rho, V_u, V_B, grad_U, grad_B, rot_U, rot_B)
+        nu = self.get_nu(V_rho, V_u, V_b, grad_U, grad_B, rot_U, rot_B)
+
         return (
             self.C * nu[0] * (S - (1.0/3.0) * grad_U.trace() * kron) 
             + (1.0/3.0) * self.Y * nu[1] * S_abs * kron
         )
 
     @ti.func
-    def get_nu(self, V_rho, V_u, V_B, grad_U, grad_B, rot_U, rot_B):
+    def get_nu(self, V_rho, V_u, V_b, grad_U, grad_B, rot_U, rot_B):
         if ti.static(self.les == NonHallLES.SMAG):
-            return self.nu_t_smag(V_rho, V_u, V_B, grad_U, grad_B, rot_U, rot_B)
+            return self.nu_t_smag(V_rho, V_u, V_b, grad_U, grad_B, rot_U, rot_B)
         elif ti.static(self.les == NonHallLES.CROSS_HELICITY):
-            return self.nu_t_crosshelicity(V_rho, V_u, V_B, grad_U, grad_B, rot_U, rot_B)
+            return self.nu_t_crosshelicity(V_rho, V_u, V_b, grad_U, grad_B, rot_U, rot_B)
         else:
-            return self.nu_t_dns(V_rho, V_u, V_B, grad_U, grad_B, rot_U, rot_B)
+            return self.nu_t_dns(V_rho, V_u, V_b, grad_U, grad_B, rot_U, rot_B)
 
     @ti.func
-    def nu_t_dns(self, V_rho, V_u, V_B, grad_U, grad_B, rot_U, rot_B):
+    def nu_t_dns(self, V_rho, V_u, V_b, grad_U, grad_B, rot_U, rot_B):
         return vec2(1e-6)
 
     @ti.func
-    def nu_t_smag(self, V_rho, V_u, V_B, grad_U, grad_B, rot_U, rot_B):
+    def nu_t_smag(self, V_rho, V_u, V_b, grad_U, grad_B, rot_U, rot_B):
         S = 0.5*(grad_U + grad_U.transpose())
         S_abs = ti.sqrt(2)*S.norm()
 
-        nu_0 = - 2 * self.filter_delta.norm_sqr() * V_rho * S_abs
-        nu_1 = 2 * self.filter_delta.norm_sqr() * V_rho * S_abs
+        nu_0 = -2.0 * self.filter_delta.norm_sqr() * V_rho * S_abs
+        nu_1 = 2.0 * self.filter_delta.norm_sqr() * V_rho * S_abs
         return vec2([nu_0, nu_1])
 
     @ti.func
-    def nu_t_crosshelicity(self, V_rho, V_u, V_B, grad_U, grad_B, rot_U, rot_B):
+    def nu_t_crosshelicity(self, V_rho, V_u, V_b, grad_U, grad_B, rot_U, rot_B):
         S = 0.5*(grad_U + grad_U.transpose())
         S_b = 0.5*(grad_B + grad_B.transpose())
 
@@ -453,12 +467,12 @@ class LesMomentumCompute(MomentumCompute):
         return vec2([nu_0, nu_1])
 
     @ti.func
-    def get_alpha(self, V_rho, V_u, V_B, grad_U, grad_B, rot_U, rot_B):
-        return self.get_nu(V_rho, V_u, V_B, grad_U, grad_B, rot_U, rot_B)[0]
+    def get_alpha(self, V_rho, V_u, V_b, grad_U, grad_B, rot_U, rot_B):
+        return self.get_nu(V_rho, V_u, V_b, grad_U, grad_B, rot_U, rot_B)[0]
 
     @ti.func
-    def get_tr_alpha(self, V_rho, V_u, V_B, grad_U, grad_B, rot_U, rot_B):
-        return self.get_nu(V_rho, V_u, V_B, grad_U, grad_B, rot_U, rot_B)[1]
+    def get_tr_alpha(self, V_rho, V_u, V_b, grad_U, grad_B, rot_U, rot_B):
+        return self.get_nu(V_rho, V_u, V_b, grad_U, grad_B, rot_U, rot_B)[1]
 
 
 @ti.data_oriented
@@ -467,42 +481,42 @@ class LesBCompute(BCompute):
         self.D = D
 
     @ti.func
-    def flux_les(self, V_rho, V_u, V_B, grad_U, grad_B, rot_U, rot_B):
+    def flux_les(self, V_rho, V_u, V_b, grad_U, grad_B, rot_U, rot_B):
         J = 0.5*(grad_B - grad_B.transpose())
-        eta = self.get_eta(V_rho, V_u, V_B, grad_U, grad_B, rot_U, rot_B)
+        eta = self.get_eta(V_rho, V_u, V_b, grad_U, grad_B, rot_U, rot_B)
         
         return self.D * eta[0] * J
 
     @ti.func
-    def get_eta(self, V_rho, V_u, V_B, grad_U, grad_B, rot_U, rot_B):
+    def get_eta(self, V_rho, V_u, V_b, grad_U, grad_B, rot_U, rot_B):
         if ti.static(self.les == NonHallLES.SMAG):
-            return self.eta_t_smag(V_rho, V_u, V_B, grad_U, grad_B, rot_U, rot_B)
+            return self.eta_t_smag(V_rho, V_u, V_b, grad_U, grad_B, rot_U, rot_B)
         elif ti.static(self.les == NonHallLES.CROSS_HELICITY):
-            return self.eta_t_crosshelicity(V_rho, V_u, V_B, grad_U, grad_B, rot_U, rot_B)
+            return self.eta_t_crosshelicity(V_rho, V_u, V_b, grad_U, grad_B, rot_U, rot_B)
         else:
-            return self.eta_t_dns(V_rho, V_u, V_B, grad_U, grad_B, rot_U, rot_B)
+            return self.eta_t_dns(V_rho, V_u, V_b, grad_U, grad_B, rot_U, rot_B)
 
     @ti.func
-    def eta_t_dns(self, V_rho, V_u, V_B, grad_U, grad_B, rot_U, rot_B):
+    def eta_t_dns(self, V_rho, V_u, V_b, grad_U, grad_B, rot_U, rot_B):
         return vec1(1e-6)
 
     @ti.func
-    def eta_t_smag(self, V_rho, V_u, V_B, grad_U, grad_B, rot_U, rot_B):
+    def eta_t_smag(self, V_rho, V_u, V_b, grad_U, grad_B, rot_U, rot_B):
         j = rot_B
 
-        eta_0 = - 2.0 * self.filter_delta.norm_sqr() * j.norm()
+        eta_0 = 2.0 * self.filter_delta.norm_sqr() * j.norm()
         return vec1(eta_0)
 
     @ti.func
-    def eta_t_crosshelicity(self, V_rho, V_u, V_B, grad_U, grad_B, rot_U, rot_B):
+    def eta_t_crosshelicity(self, V_rho, V_u, V_b, grad_U, grad_B, rot_U, rot_B):
         j = rot_B
         w = rot_U
 
         jw = j.dot(w)
 
-        eta_0 = - 2 * self.filter_delta.norm_sqr() * ti.math.sign(jw) * ti.sqrt(ti.abs(jw))
+        eta_0 = 2.0 * self.filter_delta.norm_sqr() * ti.math.sign(jw) * ti.sqrt(ti.abs(jw))
         return vec1(eta_0)
 
     @ti.func
-    def get_phi(self, V_rho, V_u, V_B, grad_U, grad_B, rot_U, rot_B):
-        return self.get_eta(V_rho, V_u, V_B, grad_U, grad_B, rot_U, rot_B)[0]
+    def get_phi(self, V_rho, V_u, V_b, grad_U, grad_B, rot_U, rot_B):
+        return self.get_eta(V_rho, V_u, V_b, grad_U, grad_B, rot_U, rot_B)[0]

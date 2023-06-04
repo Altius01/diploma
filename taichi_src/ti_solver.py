@@ -38,8 +38,8 @@ class TiSolver:
         Logger.log(f'   CFL: {self.CFL}, LES_Model: {self.les_model}, Ideal: {self.ideal}, Hall: {self.hall}')
         Logger.log(f'   Re: {self.Re}, Rem: {self.Rem}, delta_hall: {self.delta_hall}, Ma: {self.Ma}, Ms: {self.Ms}, gamma: {self.gamma}')
 
-        # self.debug_fv_step = True
-        self.debug_fv_step = False
+        self.debug_fv_step = True
+        # self.debug_fv_step = False
 
         self.config = config
         self.ghost = self.config.ghosts
@@ -55,8 +55,8 @@ class TiSolver:
         self.B = [ti.Vector.field(n=3, dtype=double, shape=self.config.shape) for i in range(self.rk_steps)]
         self.B_staggered = [ti.Vector.field(n=3, dtype=double, shape=self.config.shape) for i in range(self.rk_steps)]
         self.E = ti.Vector.field(n=3, dtype=double, shape=self.config.shape)
-        # self.p = [ti.field(dtype=double, shape=self.config.shape) for i in range(self.rk_steps)]
-        self.p = [ti.Vector.field(n=3, dtype=double, shape=self.config.shape) for i in range(self.rk_steps)]
+        self.p = [ti.field(dtype=double, shape=self.config.shape) for i in range(self.rk_steps)]
+        # self.p = [ti.Vector.field(n=3, dtype=double, shape=self.config.shape) for i in range(self.rk_steps)]
         self.rho = [ti.field(dtype=double, shape=self.config.shape) for i in range(self.rk_steps)]
 
         self.fv_computer = LesComputer(self.gamma, self.Re, self.Ms, self.Ma, self.Rem, 
@@ -69,14 +69,14 @@ class TiSolver:
         self.initials_OT = self.initials_OT_2D
 
         if self.config.dim == 2:
-            self.div_cleaning = True
+            # self.div_cleaning = True
             self.update_B_staggered = self.update_B_staggered_2D
             self.update_B = self.update_B_2D
             self.initials_OT = self.initials_OT_2D
 
             self.ghosts_system = self.fv_computer.ghosts_periodic_call
         elif self.config.dim == 3:
-            self.div_cleaning = True
+            # self.div_cleaning = True
             self.update_B_staggered = self.update_B_staggered_3D
             self.update_B = self.update_B_3D
             self.initials_OT = self.initials_OT_3D
@@ -145,14 +145,24 @@ class TiSolver:
         dT = self.CFL*ti.min(self.h[0] / lambdas[0], self.h[1] / lambdas[1], self.h[2] / lambdas[2])
 
         dT_visc = dT
-        if (self.ideal == False):
+        if (self.ideal == False or self.hall):
             dT_visc = self.CFL*ti.min(
                 self.h[0]**2 / (2*((4.0/3.0)*(self.Rem/self.Re) + 1.0)*self.nu_0), 
                 self.h[1]**2 / (2*((4.0/3.0)*(self.Rem/self.Re) + 1.0)*self.nu_0), 
                 self.h[2]**2 / (2*((4.0/3.0)*(self.Rem/self.Re) + 1.0)*self.nu_0)
             )
+
+        dT_visc_les = dT
+        if (self.les_model != NonHallLES.DNS):
+            nu_les = self.fv_computer.get_cfl_cond_les()
+            dT_visc_les = self.CFL*ti.min(
+                self.h[0]**2 / nu_les, 
+                self.h[1]**2 / nu_les,
+                self.h[2]**2 / nu_les
+            )
         
-        return ti.min(dT, dT_visc)
+        
+        return ti.min(dT, dT_visc, dT_visc_les)
 
     @ti.func
     def _check_ghost(self, shape, idx):
@@ -317,7 +327,7 @@ class TiSolver:
 
     @ti.func
     def get_B0(self, idx):
-        return self.B[0][idx]
+        return self.B_staggered[0][idx]
     
     @ti.func
     def get_E(self, idx):
@@ -394,7 +404,7 @@ class TiSolver:
         self.ghosts_system(self.rho[1], self.u[1], self.B[1])
 
         if self.div_cleaning == True:
-            self.fv_computer.ghosts_periodic_foo_call(self.E)
+            self.fv_computer.ghosts_mirror_foo_call(self.E)
 
             self.fv_computer.computeB_staggered(self.E, self.B_staggered[1])
             self.fv_computer.ghosts_periodic_foo_call(self.B_staggered[1])
@@ -407,9 +417,8 @@ class TiSolver:
 
         self.div_fields_u_1_order(self.u[0], self.rho[0])
 
-        self.fv_computer.computeP(self.p[0], self.get_E)
-
         if self.div_cleaning == True:
             self.update_B_call(0)
 
-        # self.fv_computer.ghosts_periodic_foo_call(self.p[0])
+        self.fv_computer.computeP(self.p[0], self.get_B0)
+        self.fv_computer.ghosts_mirror_foo_call(self.p[0])
