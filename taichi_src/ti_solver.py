@@ -55,7 +55,8 @@ class TiSolver:
         self.B = [ti.Vector.field(n=3, dtype=double, shape=self.config.shape) for i in range(self.rk_steps)]
         self.B_staggered = [ti.Vector.field(n=3, dtype=double, shape=self.config.shape) for i in range(self.rk_steps)]
         self.E = ti.Vector.field(n=3, dtype=double, shape=self.config.shape)
-        self.p = [ti.field(dtype=double, shape=self.config.shape) for i in range(self.rk_steps)]
+        # self.p = [ti.field(dtype=double, shape=self.config.shape) for i in range(self.rk_steps)]
+        self.p = [ti.Vector.field(n=3, dtype=double, shape=self.config.shape) for i in range(self.rk_steps)]
         self.rho = [ti.field(dtype=double, shape=self.config.shape) for i in range(self.rk_steps)]
 
         self.fv_computer = LesComputer(self.gamma, self.Re, self.Ms, self.Ma, self.Rem, 
@@ -317,6 +318,10 @@ class TiSolver:
     @ti.func
     def get_B0(self, idx):
         return self.B[0][idx]
+    
+    @ti.func
+    def get_E(self, idx):
+        return self.E[idx]
 
     @ti.kernel
     def sum_fields(self, a: ti.template(), b:ti.template(), c:ti.template(), c1:double, c2:double, c3:double):
@@ -402,9 +407,9 @@ class TiSolver:
 
         self.div_fields_u_1_order(self.u[0], self.rho[0])
 
+        self.fv_computer.computeP(self.p[0], self.get_E)
 
         if self.div_cleaning == True:
             self.update_B_call(0)
 
-        self.fv_computer.computeP(self.p[0], self.get_B0)
-        self.fv_computer.ghosts_periodic_foo_call(self.p[0])
+        # self.fv_computer.ghosts_periodic_foo_call(self.p[0])

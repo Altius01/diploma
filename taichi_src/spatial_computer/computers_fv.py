@@ -223,7 +223,7 @@ class SystemComputer:
         # Magnetosonic wawes
         c_f = ti.sqrt( 0.5 * ((b**2 + c**2) + sq_root))
 
-        return 4*c_f
+        return c_f
 
     @ti.func
     def get_s_j_max(self, j, idx):
@@ -438,8 +438,6 @@ class SystemComputer:
                     
                     flux_l = self.flux_HLLD_right(j, idx_l)
 
-                    E_idx = E_flux_idx[j, :]
-
                     res -= (flux_r - flux_l) / get_elem_1d(self.h, j)
 
                 out_rho[idx] = res[0, 0]
@@ -452,16 +450,20 @@ class SystemComputer:
                 ijm1k = vec3i([i, j-1, k]) 
                 ijkm1 = vec3i([i, j, k-1])
 
+                im1jk = get_ghost_new_idx(self.ghost, self.shape, im1jk)
+                ijm1k = get_ghost_new_idx(self.ghost, self.shape, ijm1k)
+                ijkm1 = get_ghost_new_idx(self.ghost, self.shape, ijkm1)
+
                 # E = vec3(0)
                 # if ti.static(self.dimensions == 3):
                 #     E[0] = 0.25 * (F_R[2, 1] + F_L[2, 1] - F_L[1, 1] - F_R[1, 1])
                 #     E[1] = 0.25 * (F_R[0, 1] + F_L[0, 1] - F_L[2, 0] - F_R[2, 0])
 
                 # E[2] = 0.25 * (F_R[1, 0] + F_L[1, 0] - F_L[0, 0] - F_R[0, 0])
-                
-                ti.atomic_add(out_E[idx], 0.25*(res[0, 2] - res[1, 2]))
-                ti.atomic_add(out_E[im1jk], 0.25*(res[0, 2]))
-                ti.atomic_add(out_E[ijm1k], 0.25*(- res[1, 2]))
+
+                ti.atomic_add(out_E[ijk][2], 0.25*(res[0, 2] - res[1, 2]))
+                ti.atomic_add(out_E[im1jk][2], 0.25*(res[0, 2]))
+                ti.atomic_sub(out_E[ijm1k][2], 0.25*(res[1, 2]))
 
 
     @ti.kernel
@@ -480,22 +482,22 @@ class SystemComputer:
                 ijm1km1 = vec3i([i, j-1, k-1])               
 
                 res = vec3(0)
-                res[0] = (
+                res[0] = -(
                     self.h[2]*(E[ijk][2] - E[ijm1k][2]) 
                     + self.h[1]*(E[ijkm1][1] - E[ijk][1])
                     ) / (self.h[1]*self.h[2])
 
-                res[1] = (
+                res[1] = -(
                     self.h[0]*(E[ijm1k][0] - E[ijm1km1][0])
                     + self.h[2]*(E[im1jm1k][2] - E[ijm1k][2])
                 ) / (self.h[0]*self.h[2])
 
-                res[2] = (
+                res[2] = -(
                     self.h[0]*(E[ijm1k][0] - E[ijk][0])
                     + self.h[1]*(E[ijk][1] - E[im1jk][1])
                 ) / (self.h[0]*self.h[1])
 
-                B_stag_out[idx] = -res
+                B_stag_out[idx] = res
 
     @ti.kernel
     def computeB_staggered_2D(self, E: ti.template(), B_stag_out: ti.template()):
@@ -509,15 +511,15 @@ class SystemComputer:
                 im1jm1k = vec3i([i-1, j-1, k])            
 
                 res = vec3(0)
-                res[0] = (
+                res[0] = -(
                     (E[ijk][2] - E[ijm1k][2])
                     ) / (self.h[1])
 
-                res[1] = (
+                res[1] = -(
                     (E[im1jm1k][2] - E[ijm1k][2])
                 ) / (self.h[0])
 
-                B_stag_out[idx] = -res
+                B_stag_out[idx] = res
 
     @ti.func
     def flux_HLLD_right_3D(self, i, idx):
@@ -687,10 +689,11 @@ class SystemComputer:
     @ti.kernel
     def computeP(self, out: ti.template(), foo_B: ti.template()):
         for idx in ti.grouped(out):
-            if not self.check_ghost_idx(idx):
+            # if not self.check_ghost_idx(idx):
                 # out[idx] = ti.math.pow(ti.cast(rho_new[idx], ti.f32), ti.cast(self.gamma, ti.f32))
-                out[idx] = 0.5*foo_B(idx).norm_sqr()
+                # out[idx] = 0.5*foo_B(idx).norm_sqr()
                 # out[idx] = self.div_vec(foo_B, self.h, idx)
+            out[idx] = foo_B(idx)
 
     @ti.kernel
     def compute_U(self, rho_u: ti.template(), rho: ti.template()):
