@@ -426,6 +426,7 @@ class SystemComputer:
     @ti.kernel
     def computeHLLD(self, out_rho: ti.template(), out_u: ti.template(), 
         out_B: ti.template(), out_E: ti.template()):
+        Flux_E = vec3(0)
         for idx in ti.grouped(self.rho):
             if not self.check_ghost_idx(idx):
                 res = mat3x3(0)
@@ -438,7 +439,10 @@ class SystemComputer:
                     
                     flux_l = self.flux_HLLD_right(j, idx_l)
 
-                    res -= (flux_r - flux_l) / get_elem_1d(self.h, j)
+                    flux = (flux_r - flux_l) / get_elem_1d(self.h, j)
+
+                    Flux_E[j] = flux[j, 2]
+                    res -= flux
 
                 out_rho[idx] = res[0, 0]
                 out_u[idx] = res[:, 1]
@@ -461,9 +465,9 @@ class SystemComputer:
 
                 # E[2] = 0.25 * (F_R[1, 0] + F_L[1, 0] - F_L[0, 0] - F_R[0, 0])
 
-                ti.atomic_add(out_E[ijk][2], 0.25*(res[0, 2] - res[1, 2]))
-                ti.atomic_add(out_E[im1jk][2], 0.25*(res[0, 2]))
-                ti.atomic_sub(out_E[ijm1k][2], 0.25*(res[1, 2]))
+                ti.atomic_add(out_E[ijk][2], 0.25*(Flux_E[0] - Flux_E[1]))
+                ti.atomic_add(out_E[im1jk][2], 0.25*(Flux_E[0]))
+                ti.atomic_sub(out_E[ijm1k][2], 0.25*(Flux_E[1]))
 
 
     @ti.kernel
