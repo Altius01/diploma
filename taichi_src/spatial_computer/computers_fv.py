@@ -426,13 +426,10 @@ class SystemComputer:
     @ti.kernel
     def computeHLLD(self, out_rho: ti.template(), out_u: ti.template(), 
         out_B: ti.template(), out_E: ti.template()):
-        E_flux_idx = mat3x2i([[1, 2], [0, 2], [0, 1]])
         for idx in ti.grouped(self.rho):
             if not self.check_ghost_idx(idx):
                 res = mat3x3(0)
 
-                F_L = mat3x2(0)
-                F_R = mat3x2(0)
                 for j in ti.ndrange(self.dimensions):
                     idx_r = idx
                     idx_l = idx - get_basis(j)
@@ -443,26 +440,29 @@ class SystemComputer:
 
                     E_idx = E_flux_idx[j, :]
 
-                    F_L[j, 0] = flux_l[E_idx[0], 2]
-                    F_L[j, 1] = flux_l[E_idx[1], 2]
-
-                    F_R[j, 0] = flux_r[E_idx[0], 2]
-                    F_R[j, 1] = flux_r[E_idx[1], 2]
-
                     res -= (flux_r - flux_l) / get_elem_1d(self.h, j)
 
                 out_rho[idx] = res[0, 0]
                 out_u[idx] = res[:, 1]
                 out_B[idx] = res[:, 2]
 
-                E = vec3(0)
-                if ti.static(self.dimensions == 3):
-                    E[0] = 0.25 * (F_R[2, 1] + F_L[2, 1] - F_L[1, 1] - F_R[1, 1])
-                    E[1] = 0.25 * (F_R[0, 1] + F_L[0, 1] - F_L[2, 0] - F_R[2, 0])
+                i, j, k = idx
+                ijk = idx
+                im1jk = vec3i([i-1, j, k]) 
+                ijm1k = vec3i([i, j-1, k]) 
+                ijkm1 = vec3i([i, j, k-1])
 
-                E[2] = 0.25 * (F_R[1, 0] + F_L[1, 0] - F_L[0, 0] - F_R[0, 0])
+                # E = vec3(0)
+                # if ti.static(self.dimensions == 3):
+                #     E[0] = 0.25 * (F_R[2, 1] + F_L[2, 1] - F_L[1, 1] - F_R[1, 1])
+                #     E[1] = 0.25 * (F_R[0, 1] + F_L[0, 1] - F_L[2, 0] - F_R[2, 0])
+
+                # E[2] = 0.25 * (F_R[1, 0] + F_L[1, 0] - F_L[0, 0] - F_R[0, 0])
                 
-                out_E[idx] = E
+                ti.atomic_add(out_E[idx], 0.25*(res[0, 2] - res[1, 2]))
+                ti.atomic_add(out_E[im1jk], 0.25*(res[0, 2]))
+                ti.atomic_add(out_E[ijm1k], 0.25*(- res[1, 2]))
+
 
     @ti.kernel
     def computeB_staggered_3D(self, E: ti.template(), B_stag_out: ti.template()):
