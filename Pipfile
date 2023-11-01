@@ -11,6 +11,7 @@ pyopencl = "*"
 sympy = "*"
 scipy = "*"
 taichi = "*"
+click = "*"
 
 [dev-packages]
 ipykernel = "*"

@@ -74,42 +74,6 @@ class LesComputer(SystemComputer):
             L[idx] = res - res.transpose()
 
     @ti.func
-    def get_Su(self, idx):
-        return self.rho[idx]*self.Su[idx]
-
-    @ti.func
-    def get_Mu_a_arr(self, idx):
-        return self.rho[idx]*self.Mu_a[idx]
-
-    @ti.func
-    def get_alpha_ij(self, idx):
-        return self.alpha_ij[idx]
-    
-    @ti.func
-    def get_phi_arr(self, idx):
-        return self.phi[idx]
-
-    @ti.func
-    def get_mB_a_arr(self, idx):
-        return self.mB_a[idx]
-
-    @ti.func
-    def get_J_arr(self, idx):
-        return self.J[idx]
-
-    @ti.func
-    def get_Su_abs(self, idx):
-        return self.rho[idx]*self.Su_abs[idx]
-
-    @ti.func
-    def get_Mu_kk_a(self, idx):
-        return self.rho[idx]*self.Mu_kk_a[idx]
-
-    @ti.func
-    def get_alpha_kk(self, idx):
-        return self.alpha_kk[idx]
-    
-    @ti.func
     def Lu_a(self, idx):
         return self.rho[idx]*self.u[idx].outer_product(self.u[idx])
 
@@ -208,6 +172,10 @@ class LesComputer(SystemComputer):
 
         self.mBmB_field = ti.field(dtype=double, shape=self.shape)
 
+        self.C_fixed = ti.field(double, ())
+        self.Y_fixed = ti.field(double, ())
+        self.D_fixed = ti.field(double, ())
+
     def box_filter(self, foo, out, eps=2.0):
         self._box_filter(foo, out, self.check_ghost_idx, eps)
         self.ghosts_periodic_foo_call(out)
@@ -278,10 +246,20 @@ class LesComputer(SystemComputer):
 
         # print(LuM, Lkk_mean, LbmB)
         # print(MM_mean, Mu_kk_mean, mBmB)
-        self.C = LuM / MM_mean
-        self.Y = Lkk_mean / Mu_kk_mean
-        self.D = LbmB / mBmB
+        self.C_fixed[None] = LuM / MM_mean
+        self.Y_fixed[None] = Lkk_mean / Mu_kk_mean
+        self.D_fixed[None] = LbmB / mBmB
 
+        # self.fix_les_consts()
+
+        # self.C = self.C_fixed[None]
+        # self.Y = self.Y_fixed[None]
+        # self.D = self.D_fixed[None]
+
+        self.C = 0.5*1e-3
+        self.Y = -0.5*1e-3
+        self.D = 0.5*1e-4
+        
     def update_les(self):
         if self.les != NonHallLES.DNS:
             self.get_les_consts()
@@ -292,13 +270,27 @@ class LesComputer(SystemComputer):
         max_eta = double(0.0)
         for idx in ti.grouped(self.rho):
             if not self.check_ghost_idx(idx):
-                nu = 2.0*ti.abs(self.get_alpha_ij(idx)*self.C + self.Y*self.get_tr_alpha(idx)) / self.Q_rho(idx)
+                nu = 2.0*ti.abs(self.get_alpha(idx)*self.C + self.Y*self.get_tr_alpha(idx)) / self.Q_rho(idx)
                 eta = 2.0*ti.abs(self.get_phi(idx)*self.D)
                 ti.atomic_max(max_nu, nu)
                 ti.atomic_max(max_eta, eta)
 
         return ti.abs(max_eta + max_nu)
 
+    # @ti.kernel
+    # def fix_les_consts(self):
+    #     for idx in ti.grouped(self.rho):
+    #         if not self.check_ghost_idx(idx):
+    #             if self.get_alpha(idx)*self.C_fixed[None] + self.Y_fixed[None]*self.get_tr_alpha(idx) + 1/self.Re < 0:
+    #                 # print("Opps U! : ", self.get_alpha(idx)*self.C_fixed[None] + self.Y_fixed[None]*self.get_tr_alpha(idx) + 1/self.Re)
+    #                 if self.C_fixed[None] < 0:
+    #                     self.C_fixed[None] = ti.abs(self.C_fixed[None])
+    #                 if self.Y_fixed[None] > 0:
+    #                     self.Y_fixed[None] = -ti.abs(self.Y_fixed[None])
+    #             if self.get_phi(idx)*self.D_fixed[None] + 1/self.Rem < 0:
+    #                 # print("Opps B! : ",  self.get_phi(idx)*self.D_fixed[None] + 1/self.Rem)
+    #                 self.D_fixed[None] = ti.abs(self.D_fixed[None])
+    
 @ti.data_oriented
 class LesMomentumCompute(MomentumCompute):
     def init_data(self, C, Y):
@@ -334,8 +326,8 @@ class LesMomentumCompute(MomentumCompute):
         S = 0.5*(grad_U + grad_U.transpose())
         S_abs = ti.sqrt(2)*S.norm()
 
-        nu_0 = -2.0 * self.filter_delta.norm_sqr() * V_rho * S_abs
-        nu_1 = 2.0 * self.filter_delta.norm_sqr() * V_rho * S_abs
+        nu_0 = 2.0 * self.filter_delta.norm_sqr() * V_rho * S_abs
+        nu_1 = -2.0 * self.filter_delta.norm_sqr() * V_rho * S_abs
         return vec2([nu_0, nu_1])
 
     @ti.func
@@ -345,8 +337,8 @@ class LesMomentumCompute(MomentumCompute):
 
         f = norm_dot_mat(S, S_b)
 
-        nu_0 = - 2 * self.filter_delta.norm_sqr() * V_rho * f
-        nu_1 = 2 * self.filter_delta.norm_sqr() * V_rho * f
+        nu_0 = 2.0 * self.filter_delta.norm_sqr() * V_rho * f
+        nu_1 = -2.0 * self.filter_delta.norm_sqr() * V_rho * f
         return vec2([nu_0, nu_1])
 
     @ti.func

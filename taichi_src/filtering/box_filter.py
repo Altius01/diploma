@@ -5,11 +5,10 @@ from taichi_src.common.types import *
 from taichi_src.common.matrix_ops import *
 
 @ti.kernel
-def knl_box_filter_1D(arr: ti.template(), output: ti.template(), 
+def knl_box_filter_1D(arr: ti.template(), out: ti.template(), 
     is_ghost_foo: ti.template(), eps: double, axe: int):
-    ti.static_assert(arr.shape == output.shape)
 
-    for idx in arr:
+    for idx in ti.grouped(out):
         if not is_ghost_foo(idx):
             left = idx + get_basis(axe)
             right = idx - get_basis(axe)
@@ -18,7 +17,7 @@ def knl_box_filter_1D(arr: ti.template(), output: ti.template(),
 
 @ti.kernel
 def favre_filter_divide(arr: ti.template(), rho_filtered: ti.template()):
-    for idx in arr:
+    for idx in ti.grouped(arr):
         arr[idx] = arr[idx] / rho_filtered[idx]
 
 def box_filter_1D(arr, out, is_ghost_foo, eps):

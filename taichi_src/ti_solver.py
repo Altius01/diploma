@@ -63,7 +63,7 @@ class TiSolver:
             self.delta_hall, self.ghost, self.config.shape, self.h, self.config.domain_size, ideal=self.ideal, hall=self.hall,
              les=self.les_model, dim=self.config.dim)
         
-        self.div_cleaning = False
+        self.div_cleaning = True
         self.ghosts_system = self.fv_computer.ghosts_wall_call
 
         self.initials_OT = self.initials_OT_2D
@@ -149,6 +149,7 @@ class TiSolver:
             nu_les = 0.0
             if (self.les_model != NonHallLES.DNS):
                 nu_les = self.fv_computer.get_cfl_cond_les()
+
             dT_visc = self.CFL*ti.min(
                 self.h[0]**2 / (2*((4.0/3.0)*(self.Rem/self.Re) + 1.0)*self.nu_0 + nu_les), 
                 self.h[1]**2 / (2*((4.0/3.0)*(self.Rem/self.Re) + 1.0)*self.nu_0 + nu_les), 
@@ -205,6 +206,26 @@ class TiSolver:
                 self.B0*ti.math.sin(2.0*self.h[0]*x),
                 0
                 ]) / sq_pi
+
+    @ti.kernel
+    def initials_SOD(self):
+        sq_pi = ti.sqrt(4*ti.math.pi)
+        for idx in ti.grouped(self.rho[0]):
+            x, y, z = idx
+
+            rho_ = 1.0
+            if x > 0.5*self.shape[0]:
+                rho_ = 0.1
+
+            self.rho[0][idx] = rho_
+            self.u[0][idx] = vec3(0)
+            self.B[0][idx] = vec3(0)
+
+            self.B[0][idx][0] = 3.0 / sq_pi
+            if x < 0.5*self.shape[0]:
+                self.B[0][idx][1] = 5.0 / sq_pi
+            else:
+                self.B[0][idx][1] = 2.0 / sq_pi
 
     @ti.kernel
     def initials_SOD(self):

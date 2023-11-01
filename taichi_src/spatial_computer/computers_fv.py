@@ -32,7 +32,7 @@ class SystemComputer:
 
         self.filter_size = vec3i([1, 1, 1])
         # self.k = -(1.0/3.0)
-        self.k = 1.0
+        self.k = -1.0
 
         self.dimensions = dim
         self.implement_dimension()
@@ -270,8 +270,8 @@ class SystemComputer:
         D_m = Q(idx) - Q(idx_left)
         D_p = Q(idx_right) - Q(idx)
 
-        # return Q(idx) + 0.25 * ( (1-self.k)*self.minmod(D_p / D_m)*D_m + (1+self.k)*self.minmod(D_m / D_p)*D_p)
-        return Q(idx)
+        return Q(idx) + 0.25 * ( (1-self.k)*self.minmod(D_p / D_m)*D_m + (1+self.k)*self.minmod(D_m / D_p)*D_p)
+        # return Q(idx)
 
     @ti.func
     def Q_R(self, Q: ti.template(), i, idx):
@@ -282,8 +282,8 @@ class SystemComputer:
         D_m = Q(idx_new) - Q(idx_left)
         D_p = Q(idx_right) - Q(idx_new)
 
-        # return Q(idx_new) - 0.25 * ( (1+self.k)*self.minmod(D_p / D_m)*D_m + (1-self.k)*self.minmod(D_m / D_p)*D_p)
-        return Q(idx_new)
+        return Q(idx_new) - 0.25 * ( (1+self.k)*self.minmod(D_p / D_m)*D_m + (1-self.k)*self.minmod(D_m / D_p)*D_p)
+        # return Q(idx_new)
 
     @ti.func
     def HLLD(self, flux_rho: ti.template(), flux_u: ti.template(), flux_B: ti.template(), 
