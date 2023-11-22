@@ -1,261 +1,149 @@
 from abc import ABC, abstractmethod
 
 import taichi as ti
-from taichi_src.common.matrix_ops import get_idx_to_basis, get_mat_col, get_vec_col
+from new_src.common.matrix_ops import get_idx_to_basis, get_mat_col, get_vec_col
 
-from taichi_src.common.types import double, vec3, mat3x3, kron
+from new_src.common.types import *
 
 
 @ti.data_oriented
-class FluxMHD(ABC):
-    def __init__(self, Q_rho, Q_momentum, Q_magnetic, Ma) -> None:
-        self.Q_rho = Q_rho
-        self.Q_momentum = Q_momentum
-        self.Q_magnetic = Q_magnetic
+class Flux(ABC):
+    def __init__(self, h, filter_size=vec3i(1), les=NonHallLES.DNS):
+        self.h = h
+        self.filter_size = filter_size
+        self.filter_delta = self.h * self.filter_size
+        self.les = les
 
+    @ti.func
+    def parse_vars(v: vec7):
+        return v[0], vec3(v[1:4]), vec3(v[4:])
+
+    @ti.func
+    @abstractmethod
+    def flux_convective(self, q):
+        ...
+
+    @ti.func
+    @abstractmethod
+    def flux_viscous(self, v, grad_U, grad_B):
+        ...
+
+    @ti.func
+    @abstractmethod
+    def flux_hall(self, v, grad_B, rot_B):
+        ...
+
+    @ti.func
+    @abstractmethod
+    def flux_les(self, v, grad_U, grad_B, rot_U, rot_B):
+        ...
+
+
+@ti.data_oriented
+class RhoFlux(Flux):
+    @ti.func
+    def flux_convective(self, q):
+        return vec3(q[1:4])
+
+    @ti.func
+    def flux_viscous(self, v, grad_U, grad_B):
+        return vec3(0)
+
+    @ti.func
+    def flux_hall(self, v, grad_B, rot_B):
+        return vec3(0)
+
+    @ti.func
+    def flux_les(self, v, grad_U, grad_B, rot_U, rot_B):
+        return vec3(0)
+
+
+@ti.data_oriented
+class MomentumFlux(Flux):
+    def __init__(self, Re, Ma, gamma, h, filter_size=vec3i(1), les=NonHallLES.DNS):
+        super().__init__(h, filter_size=filter_size, les=les)
+        self.Re = Re
         self.Ma = Ma
-
-    @ti.func
-    @abstractmethod
-    def flux_right(self, idx):
-        raise NotImplementedError()
-
-    @ti.func
-    @abstractmethod
-    def pressure(self, idx):
-        raise NotImplementedError()
-
-    def F_rho(self, idx):
-        return self.Q_momentum(idx)
-
-    def F_momentum(self, idx):
-        p = self.pressure(self.Q_rho(idx))
-        BB = self.Q_magnetic(idx).outer_product(self.Q_magnetic(idx))
-        rho_UU = self.Q_momentum(idx).outer_product(self.Q_momentum(idx)) / self.Q_rho(
-            idx
-        )
-        return (
-            rho_UU
-            + (p + (0.5 / self.Ma**2) * self.Q_magnetic(idx).norm_sqr()) * kron
-            - BB
-        )
-
-    def F_magnetic(self, idx):
-        Bu = self.Q_magnetic(idx).outer_product(self.Q_momentum(idx)) / self.Q_rho(idx)
-        return Bu - Bu.transpose()
-
-
-@ti.data_oriented
-class FluxMHDPolytropical(FluxMHD):
-    def __init__(self, gamma, Q_rho, Q_momentum, Q_magnetic, Ma) -> None:
         self.gamma = gamma
-        super().__init__(Q_rho, Q_momentum, Q_magnetic, Ma)
 
-    @ti.func
-    def pressure(self, idx):
-        return ti.pow(self.Q_rho(idx), self.gamma)
-
-
-@ti.data_oriented
-class PolytropicalHLLD(FluxMHDPolytropical):
     @ti.func
     def get_sound_speed(self, p, rho):
         return (1.0 / self.Ms) * ti.sqrt(self.gamma * p / rho)
 
     @ti.func
-    def get_c_fast(self, idx):
-        inv_pi_rho = 1.0 / ti.sqrt(self.Q_rho(idx))
-        inv_Ma = 1.0 / self.Ma
-        b = inv_Ma * self.Q_magnetic(idx).norm() * inv_pi_rho
-        b_x = inv_Ma * self.Q_magnetic(idx) * inv_pi_rho
+    def get_c_fast(self, q, axes=0):
+        q_rho, q_u, q_b = self.parse_vars(q)
+        pi_rho = ti.sqrt(q_rho)
+
+        b = (1.0 / self.Ma) * (q_b.norm() / pi_rho)
+        b_x = (1.0 / self.Ma) * (q_b[axes] / pi_rho)
 
         # Sound speed
-        _p = self.pressure(idx)
-        c = self.get_sound_speed(_p, self.Q_rho(idx))
+        _p = self.get_pressure(q_rho)
+        c = self.get_sound_speed(_p, q_rho)
 
         sq_root = ti.sqrt((b**2 + c**2) ** 2 - 4 * b_x**2 * c**2)
 
         # Magnetosonic wawes
         c_f = ti.sqrt(0.5 * ((b**2 + c**2) + sq_root))
+
         return c_f
 
     @ti.func
-    def HLLD(
-        self,
-        Q_rho_L,
-        Q_u_L,
-        Q_b_L,
-        Q_rho_R,
-        Q_u_R,
-        Q_b_R,
-        i,
-    ):
-        c_f_L = self.get_c_fast(Q_rho_L, Q_u_L, Q_b_L, i)
-        c_f_R = self.get_c_fast(Q_rho_R, Q_u_R, Q_b_R, i)
+    def get_pressure(self, rho):
+        return ti.pow(rho, self.gamma)
 
-        yz = get_idx_to_basis(i)
-        x = i
-        y = yz[0]
-        z = yz[1]
+    @ti.func
+    def flux_convective(self, q):
+        q_rho, q_u, q_b = self.parse_vars(q)
 
-        u_R = Q_u_R[x] / Q_rho_R
-        v_R = Q_u_R[y] / Q_rho_R
-        w_R = Q_u_R[z] / Q_rho_R
+        p = self.get_pressure(q_rho)
+        BB = q_b.outer_product(q_b)
+        rho_UU = q_u.outer_product(q_u) / q_rho
+        return rho_UU + (p + (0.5 / self.Ma**2) * q_b.norm_sqr()) * kron - BB
 
-        u_L = Q_u_L[x] / Q_rho_L
-        v_L = Q_u_L[y] / Q_rho_L
-        w_L = Q_u_L[z] / Q_rho_L
+    @ti.func
+    def flux_viscous(self, v, grad_U, grad_B):
+        divU = grad_U.trace()
 
-        By_R = Q_b_R[y]
-        Bz_R = Q_b_R[z]
+        return (grad_U + grad_U.transpose() + (2.0 / 3.0) * divU * kron) / self.Re
 
-        By_L = Q_b_L[y]
-        Bz_L = Q_b_L[z]
+    @ti.func
+    def flux_hall(self, v, grad_B, rot_B):
+        return mat3x3(0)
 
-        s_L = ti.min(u_L - c_f_L, u_R - c_f_R)
-        s_R = ti.max(u_L + c_f_L, u_R + c_f_R)
+    @ti.func
+    def flux_les(self, v, grad_U, grad_B, rot_U, rot_B):
+        return mat3x3(0)
 
-        F_rho_L = get_vec_col(self.F_rho(Q_rho_L, Q_u_L, Q_b_L), i)
-        F_rho_R = get_vec_col(self.F_rho(Q_rho_R, Q_u_R, Q_b_R), i)
 
-        F_u_L = get_mat_col(self.F_momentum(Q_rho_L, Q_u_L, Q_b_L), i)
-        F_u_R = get_mat_col(self.F_momentum(Q_rho_R, Q_u_R, Q_b_R), i)
+@ti.data_oriented
+class MagneticFlux(Flux):
+    def __init__(self, Rem, delta_hall, h, filter_size=vec3i(1), les=NonHallLES.DNS):
+        super().__init__(h, filter_size=filter_size, les=les)
+        self.Rem = Rem
+        self.delta_hall = delta_hall
 
-        F_b_L = get_mat_col(self.F_magnetic(Q_rho_L, Q_u_L, Q_b_L), i)
-        F_b_R = get_mat_col(self.F_magnetic(Q_rho_R, Q_u_R, Q_b_R), i)
+    @ti.func
+    def flux_convective(self, q):
+        q_rho, q_u, q_b = self.parse_vars(q)
 
-        Q_rho_hll = (s_R * Q_rho_R - s_L * Q_rho_L - F_rho_R + F_rho_L) / (s_R - s_L)
-        F_rho_hll = (
-            s_R * F_rho_L - s_L * F_rho_R + s_R * s_L * (Q_rho_R - Q_rho_L)
-        ) / (s_R - s_L)
+        Bu = q_b.outer_product(q_u) / q_rho
+        return Bu - Bu.transpose()
 
-        Q_u_hll = (s_R * Q_u_R - s_L * Q_u_L - F_u_R + F_u_L) / (s_R - s_L)
-        F_u_hll = (s_R * F_u_L - s_L * F_u_R + s_R * s_L * (Q_u_R - Q_u_L)) / (
-            s_R - s_L
-        )
+    @ti.func
+    def flux_viscous(self, v, grad_U, grad_B):
+        return (grad_B - grad_B.transpose()) / self.Rem
 
-        Q_b_hll = (s_R * Q_b_R - s_L * Q_b_L - F_b_R + F_b_L) / (s_R - s_L)
-        Bx = Q_b_L[x]
+    @ti.func
+    def flux_hall(self, v, grad_B, rot_B):
+        v_rho, v_u, v_b = self.parse_vars(v)
 
-        u_star = F_rho_hll / Q_rho_hll
+        j = rot_B
+        v_h = -self.delta_hall * j / v_rho
+        v_hB = v_h.outer_product(v_b)
+        return v_hB - v_hB.transpose()
 
-        ca = (1.0 / self.Ma) * (ti.abs(Bx) / ti.sqrt(Q_rho_hll))
-        s_L_star = u_star - ca
-        s_R_star = u_star + ca
-
-        rho_v_L_star = Q_rho_hll * v_L
-        rho_v_R_star = Q_rho_hll * v_R
-
-        rho_w_L_star = Q_rho_hll * w_L
-        rho_w_R_star = Q_rho_hll * w_R
-
-        By_L_star = double(0.0)
-        By_R_star = double(0.0)
-
-        Bz_L_star = double(0.0)
-        Bz_R_star = double(0.0)
-
-        if (
-            ti.abs((s_L - s_L_star) * (s_L - s_R_star)) > 1e-8
-            and ti.abs((s_R - s_L_star) * (s_R - s_R_star)) > 1e-8
-        ):
-            rho_v_L_star = Q_rho_hll * v_L - (1.0 / self.Ma**2) * Bx * By_L * (
-                u_star - u_L
-            ) / ((s_L - s_L_star) * (s_L - s_R_star))
-            rho_v_R_star = Q_rho_hll * v_R - (1.0 / self.Ma**2) * Bx * By_R * (
-                u_star - u_R
-            ) / ((s_R - s_L_star) * (s_R - s_R_star))
-
-            rho_w_L_star = Q_rho_hll * w_L - (1.0 / self.Ma**2) * Bx * Bz_L * (
-                u_star - u_L
-            ) / ((s_L - s_L_star) * (s_L - s_R_star))
-            rho_w_R_star = Q_rho_hll * w_R - (1.0 / self.Ma**2) * Bx * Bz_R * (
-                u_star - u_R
-            ) / ((s_R - s_L_star) * (s_R - s_R_star))
-
-            By_L_star = (By_L / Q_rho_hll) * (
-                (Q_rho_L * (s_L - u_L) ** 2 - (1.0 / self.Ma**2) * Bx**2)
-                / ((s_L - s_L_star) * (s_L - s_R_star))
-            )
-            By_R_star = (By_R / Q_rho_hll) * (
-                (Q_rho_R * (s_R - u_R) ** 2 - (1.0 / self.Ma**2) * Bx**2)
-                / ((s_R - s_L_star) * (s_R - s_R_star))
-            )
-
-            Bz_L_star = (Bz_L / Q_rho_hll) * (
-                (Q_rho_L * (s_L - u_L) ** 2 - (1.0 / self.Ma**2) * Bx**2)
-                / ((s_L - s_L_star) * (s_L - s_R_star))
-            )
-            Bz_R_star = (Bz_R / Q_rho_hll) * (
-                (Q_rho_R * (s_R - u_R) ** 2 - (1.0 / self.Ma**2) * Bx**2)
-                / ((s_R - s_L_star) * (s_R - s_R_star))
-            )
-
-        Xi = ti.sqrt(Q_rho_hll) * ti.math.sign(Bx)
-
-        rho_v_C_star = (
-            0.5 * (rho_v_L_star + rho_v_R_star)
-            + (0.5 / self.Ma**2) * (By_R_star - By_L_star) * Xi
-        )
-        rho_w_C_star = (
-            0.5 * (rho_w_L_star + rho_w_R_star)
-            + (0.5 / self.Ma**2) * (Bz_R_star - Bz_L_star) * Xi
-        )
-        By_C_star = 0.5 * (By_L_star + By_R_star) + 0.5 * (
-            (rho_v_R_star - rho_v_L_star) / Xi
-        )
-        Bz_C_star = 0.5 * (Bz_L_star + Bz_R_star) + 0.5 * (
-            (rho_w_R_star - rho_w_L_star) / Xi
-        )
-
-        result = mat3x3(0)
-
-        Q_u_L_star = Q_u_hll
-        Q_u_L_star[y] = rho_v_L_star
-        Q_u_L_star[z] = rho_w_L_star
-
-        Q_u_R_star = Q_u_hll
-        Q_u_R_star[y] = rho_v_R_star
-        Q_u_R_star[z] = rho_w_R_star
-
-        Q_b_L_star = Q_b_L
-        Q_b_L_star[y] = By_L_star
-        Q_b_L_star[z] = Bz_L_star
-
-        Q_b_R_star = Q_b_R
-        Q_b_R_star[y] = By_R_star
-        Q_b_R_star[z] = Bz_R_star
-
-        F_rho_C_star = Q_rho_hll * u_star
-
-        F_u_C_star = vec3(0)
-        F_u_C_star[x] = F_u_hll[x]
-        F_u_C_star[y] = rho_v_C_star * u_star - Bx * By_C_star
-        F_u_C_star[z] = rho_w_C_star * u_star - Bx * Bz_C_star
-
-        F_B_C_star = vec3(0)
-        F_B_C_star[y] = By_C_star * u_star - (Bx * rho_v_C_star / Q_rho_hll)
-        F_B_C_star[z] = Bz_C_star * u_star - (Bx * rho_w_C_star / Q_rho_hll)
-
-        if s_L > 0:
-            result[0, 0] = F_rho_L
-            result[:, 1] = F_u_L
-            result[:, 2] = F_b_L
-        elif s_L_star > 0:
-            result[0, 0] = F_rho_L + s_L * (Q_rho_hll - Q_rho_L)
-            result[:, 1] = F_u_L + s_L * (Q_u_L_star - Q_u_L)
-            result[:, 2] = F_b_L + s_L * (Q_b_L_star - Q_b_L)
-        elif s_R_star > 0:
-            result[0, 0] = F_rho_C_star
-            result[:, 1] = F_u_C_star
-            result[:, 2] = F_B_C_star
-        elif s_R > 0:
-            result[0, 0] = F_rho_R + s_R * (Q_rho_hll - Q_rho_R)
-            result[:, 1] = F_u_R + s_R * (Q_u_R_star - Q_u_R)
-            result[:, 2] = F_b_R + s_R * (Q_b_R_star - Q_b_R)
-        else:
-            result[0, 0] = F_rho_R
-            result[:, 1] = F_u_R
-            result[:, 2] = F_b_R
-
-        return result
+    @ti.func
+    def flux_les(self, v, grad_U, grad_B, rot_U, rot_B):
+        return mat3x3(0)
