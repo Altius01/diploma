@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+import re
 
 import taichi as ti
 from new_src.common.matrix_ops import get_idx_to_basis, get_mat_col, get_vec_col
@@ -15,7 +16,7 @@ class Flux(ABC):
         self.les = les
 
     @ti.func
-    def parse_vars(v: vec7):
+    def parse_vars(self, v: vec7):
         return v[0], vec3(v[1:4]), vec3(v[4:])
 
     @ti.func
@@ -60,18 +61,24 @@ class RhoFlux(Flux):
 
 @ti.data_oriented
 class MomentumFlux(Flux):
-    def __init__(self, Re, Ma, gamma, h, filter_size=vec3i(1), les=NonHallLES.DNS):
+    def __init__(self, Re, Ma, Ms, gamma, h, filter_size=vec3i(1), les=NonHallLES.DNS):
         super().__init__(h, filter_size=filter_size, les=les)
         self.Re = Re
         self.Ma = Ma
+        self.Ms = Ms
         self.gamma = gamma
 
     @ti.func
     def get_sound_speed(self, p, rho):
         return (1.0 / self.Ms) * ti.sqrt(self.gamma * p / rho)
 
-    @ti.func
     def get_c_fast(self, q, axes=0):
+        self.axes: int = axes
+        return self._get_c_fast(q)
+
+    @ti.func
+    def _get_c_fast(self, q):
+        axes = ti.static(self.axes)
         q_rho, q_u, q_b = self.parse_vars(q)
         pi_rho = ti.sqrt(q_rho)
 

@@ -1,0 +1,1 @@
+C:/Users/alex/.virtualenvs/diploma-Amoc1FxJ/Scripts/python.exe C:/Users/alex/own_proj/diploma/common/main_div_cleaning.py
