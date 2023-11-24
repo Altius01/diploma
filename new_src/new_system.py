@@ -171,8 +171,8 @@ class TiSystem:
             self.current_step % self.config.rw_del != 0
         ):
             dT = self.get_cfl()
-            if self.debug_fv_step:
-                print(f"CFL: dT: {dT}")
+            # if self.debug_fv_step:
+            #     print(f"CFL: dT: {dT}")
 
             self.current_time += dT
             self.current_step += 1
@@ -184,26 +184,28 @@ class TiSystem:
 
     def get_cfl(self):
         self.fv_computer.update_data(self.rho[0], self.p[0], self.u[0], self.B[0])
-        lambdas = self.fv_computer.get_cfl_cond()
+        lambdas = self.fv_computer.get_cfl_cond() + vec3(1e-9)
 
-        dT = self.CFL * ti.min(
-            self.h[0] / lambdas[0], self.h[1] / lambdas[1], self.h[2] / lambdas[2]
-        )
+        # dT = self.CFL * ti.min(
+        #     self.h[0] / lambdas[0], self.h[1] / lambdas[1], self.h[2] / lambdas[2]
+        # )
+
+        dT = self.CFL * ti.min(self.h[0] / lambdas[0], self.h[1] / lambdas[1]) * 1e-2
 
         dT_visc = dT
-        if self.ideal == False or self.hall:
-            nu_les = 0.0
-            # if self.les_model != NonHallLES.DNS:
-            #     nu_les = self.fv_computer.get_cfl_cond_les()
+        # if self.ideal == False or self.hall:
+        #     nu_les = 0.0
+        #     # if self.les_model != NonHallLES.DNS:
+        #     #     nu_les = self.fv_computer.get_cfl_cond_les()
 
-            dT_visc = self.CFL * ti.min(
-                self.h[0] ** 2
-                / (2 * ((4.0 / 3.0) * (self.Rem / self.Re) + 1.0) * self.nu_0 + nu_les),
-                self.h[1] ** 2
-                / (2 * ((4.0 / 3.0) * (self.Rem / self.Re) + 1.0) * self.nu_0 + nu_les),
-                self.h[2] ** 2
-                / (2 * ((4.0 / 3.0) * (self.Rem / self.Re) + 1.0) * self.nu_0 + nu_les),
-            )
+        #     dT_visc = self.CFL * ti.min(
+        #         self.h[0] ** 2
+        #         / (2 * ((4.0 / 3.0) * (self.Rem / self.Re) + 1.0) * self.nu_0 + nu_les),
+        #         self.h[1] ** 2
+        #         / (2 * ((4.0 / 3.0) * (self.Rem / self.Re) + 1.0) * self.nu_0 + nu_les),
+        #         self.h[2] ** 2
+        #         / (2 * ((4.0 / 3.0) * (self.Rem / self.Re) + 1.0) * self.nu_0 + nu_les),
+        #     )
         return ti.min(dT, dT_visc)
 
     @ti.func
@@ -433,7 +435,7 @@ class TiSystem:
 
     @ti.func
     def get_B0(self, idx):
-        return self.B_staggered[0][idx]
+        return self.B[0][idx]
 
     @ti.func
     def get_E(self, idx):
@@ -543,8 +545,8 @@ class TiSystem:
 
         self.div_fields_u_1_order(self.u[0], self.rho[0])
 
-        if self.div_cleaning == True:
-            self.update_B_call(0)
+        # if self.div_cleaning == True:
+        #     self.update_B_call(0)
 
         self.fv_computer.computeP(self.p[0], self.get_B0)
         self.fv_computer.ghosts_mirror_foo_call(self.p[0])

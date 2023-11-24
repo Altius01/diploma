@@ -5,8 +5,8 @@ from new_src.common.matrix_ops import get_basis, get_mat_col
 from new_src.common.pointers import get_elem_1d
 from new_src.common.types import *
 from new_src.flux.flux import MagneticFlux, MomentumFlux, RhoFlux
-from new_src.flux.solvers import RoeSolver
-from new_src.reconstruction.reconstructors import tvd_slope_limiter_2order
+from new_src.flux.solvers import RoeSolver, Solver
+from new_src.reconstruction.reconstructors import tvd_1order, tvd_slope_limiter_2order
 from new_src.spatial_diff.diff_fv import (
     V_plus_sc_2D,
     V_plus_vec_2D,
@@ -87,11 +87,10 @@ class Problem:
             les=self.les,
         )
 
-        self.solver = RoeSolver(
-            self.rho_computer,
-            self.u_computer,
-            self.B_computer,
-        )
+        self.solvers: list[Solver] = [
+            RoeSolver(self.rho_computer, self.u_computer, self.B_computer, axes)
+            for axes in range(self.dimensions)
+        ]
 
     def update_data(self, rho, p, u, B):
         self.u = u
@@ -175,29 +174,27 @@ class Problem:
 
         return result
 
-    def get_s_j_max(self, idx, axes=0):
-        self.axes = axes
-        return self._get_s_j_max(idx)
-
     @ti.func
-    def _get_s_j_max(self, idx):
-        return ti.abs(self.u[idx][ti.static(self.axes)]) + self.u_computer.get_c_fast(
-            self.q(idx), ti.static(self.axes)
-        )
+    def get_s_j_max(self, idx):
+        result = vec3(0)
+
+        for axes in ti.static(range(self.dimensions)):
+            result[axes] = ti.abs(self.u[idx][ti.static(axes)]) + self.solvers[
+                axes
+            ].get_c_fast(self.q(idx))
+
+        return result
 
 
 class Problem2D(Problem):
     @ti.kernel
     def get_cfl_cond(self) -> vec3:
-        max_x = double(1e-8)
-        max_y = double(1e-8)
-        max_z = double(1e-8)
+        result = vec3(0)
 
         for idx in ti.grouped(self.rho):
-            ti.atomic_max(max_x, self.get_s_j_max(idx, 0))
-            ti.atomic_max(max_y, self.get_s_j_max(idx, 1))
+            ti.atomic_max(result, self.get_s_j_max(idx))
 
-        return vec3([max_x, max_y, max_z])
+        return result
 
     @ti.kernel
     def compute(
@@ -216,9 +213,17 @@ class Problem2D(Problem):
                     idx_r = idx
                     idx_l = idx - get_basis(axes)
 
-                    flux_r = self.get_flux_right(idx_r, axes)
+                    q_l = tvd_1order(self.q, idx_r - get_basis(axes))
+                    q_r = tvd_1order(self.q, idx_r)
 
-                    flux_l = self.get_flux_right(idx_l, axes)
+                    flux_r = self.get_flux_right(self.solvers[axes], q_l, q_r)
+
+                    q_l = tvd_1order(self.q, idx_l - get_basis(axes))
+                    q_r = tvd_1order(self.q, idx_l)
+
+                    flux_l = self.get_flux_right(
+                        self.solvers[axes], self.q(idx), self.q(idx)
+                    )
 
                     flux = (flux_r - flux_l) / get_elem_1d(self.h, axes)
 
@@ -230,25 +235,25 @@ class Problem2D(Problem):
                 out_u[idx] = res[1:4]
                 out_B[idx] = res[4:]
 
-                i = idx[0]
-                j = idx[1]
-                k = idx[2]
+                # i = idx[0]
+                # j = idx[1]
+                # k = idx[2]
 
-                ijk = idx
+                # ijk = idx
 
-                im1jk = vec3i([i - 1, j, k])
-                ijm1k = vec3i([i, j - 1, k])
+                # im1jk = vec3i([i - 1, j, k])
+                # ijm1k = vec3i([i, j - 1, k])
 
-                im1jm1k = vec3i([i - 1, j - 1, k])
+                # im1jm1k = vec3i([i - 1, j - 1, k])
 
-                im1jk = get_ghost_new_idx(self.ghost, self.shape, im1jk)
-                ijm1k = get_ghost_new_idx(self.ghost, self.shape, ijm1k)
+                # im1jk = get_ghost_new_idx(self.ghost, self.shape, im1jk)
+                # ijm1k = get_ghost_new_idx(self.ghost, self.shape, ijm1k)
 
-                im1jm1k = get_ghost_new_idx(self.ghost, self.shape, im1jm1k)
+                # im1jm1k = get_ghost_new_idx(self.ghost, self.shape, im1jm1k)
 
-                ti.atomic_add(out_E[ijk][2], 0.25 * (Flux_E[1, 0] - Flux_E[0, 1]))
-                ti.atomic_add(out_E[im1jk][2], 0.25 * (Flux_E[1, 0]))
-                ti.atomic_add(out_E[ijm1k][2], -0.25 * (Flux_E[0, 1]))
+                # ti.atomic_add(out_E[ijk][2], 0.25 * (Flux_E[1, 0] - Flux_E[0, 1]))
+                # ti.atomic_add(out_E[im1jk][2], 0.25 * (Flux_E[1, 0]))
+                # ti.atomic_add(out_E[ijm1k][2], -0.25 * (Flux_E[0, 1]))
 
     @ti.kernel
     def computeB_staggered(self, E: ti.template(), B_stag_out: ti.template()):
@@ -268,13 +273,8 @@ class Problem2D(Problem):
                 B_stag_out[idx] = res
 
     @ti.func
-    def get_flux_right(self, idx, axes):
-        q_l = tvd_slope_limiter_2order(self.q, idx - get_basis(axes))
-        q_r = tvd_slope_limiter_2order(self.q, idx)
-
-        result = vec7(0)
-
-        result += self.solver[axes].get_conv(q_l, q_r)
+    def get_flux_right(self, solver, q_l, q_r, axes=0):
+        result = solver.get_conv(q_l, q_r)
 
         # corner = idx - vec3i([1, 1, 0]) + get_dx_st_2D(self.axes, j, 0, left=False)
         # v_rho = V_plus_sc_2D(self.v_rho, corner)

@@ -5,11 +5,20 @@ from new_src.flux.limiters import minmod
 
 
 @ti.func
+def tvd_1order(
+    q: ti.template(),
+    idx: int,
+    axes: int = 0,
+):
+    return q(idx)
+
+
+@ti.func
 def tvd_slope_limiter_2order(
     q: ti.template(),
     idx: int,
     axes: int = 0,
-    k: float = (1.0 / 3.0),
+    k: float = -1.0,
     limiter: ti.template() = minmod,
 ):
     idx_left = idx

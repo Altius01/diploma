@@ -7,6 +7,11 @@ from new_src.common.matrix_ops import get_idx_to_basis, get_mat_col, get_vec_col
 from new_src.common.types import *
 
 
+@ti.func
+def parse_vars(v: vec7):
+    return v[0], vec3(v[1:4]), vec3(v[4:])
+
+
 @ti.data_oriented
 class Flux(ABC):
     def __init__(self, h, filter_size=vec3i(1), les=NonHallLES.DNS):
@@ -14,10 +19,6 @@ class Flux(ABC):
         self.filter_size = filter_size
         self.filter_delta = self.h * self.filter_size
         self.les = les
-
-    @ti.func
-    def parse_vars(self, v: vec7):
-        return v[0], vec3(v[1:4]), vec3(v[4:])
 
     @ti.func
     @abstractmethod
@@ -72,37 +73,13 @@ class MomentumFlux(Flux):
     def get_sound_speed(self, p, rho):
         return (1.0 / self.Ms) * ti.sqrt(self.gamma * p / rho)
 
-    def get_c_fast(self, q, axes=0):
-        self.axes: int = axes
-        return self._get_c_fast(q)
-
-    @ti.func
-    def _get_c_fast(self, q):
-        axes = ti.static(self.axes)
-        q_rho, q_u, q_b = self.parse_vars(q)
-        pi_rho = ti.sqrt(q_rho)
-
-        b = (1.0 / self.Ma) * (q_b.norm() / pi_rho)
-        b_x = (1.0 / self.Ma) * (q_b[axes] / pi_rho)
-
-        # Sound speed
-        _p = self.get_pressure(q_rho)
-        c = self.get_sound_speed(_p, q_rho)
-
-        sq_root = ti.sqrt((b**2 + c**2) ** 2 - 4 * b_x**2 * c**2)
-
-        # Magnetosonic wawes
-        c_f = ti.sqrt(0.5 * ((b**2 + c**2) + sq_root))
-
-        return c_f
-
     @ti.func
     def get_pressure(self, rho):
         return ti.pow(rho, self.gamma)
 
     @ti.func
     def flux_convective(self, q):
-        q_rho, q_u, q_b = self.parse_vars(q)
+        q_rho, q_u, q_b = parse_vars(q)
 
         p = self.get_pressure(q_rho)
         BB = q_b.outer_product(q_b)
@@ -133,7 +110,7 @@ class MagneticFlux(Flux):
 
     @ti.func
     def flux_convective(self, q):
-        q_rho, q_u, q_b = self.parse_vars(q)
+        q_rho, q_u, q_b = parse_vars(q)
 
         Bu = q_b.outer_product(q_u) / q_rho
         return Bu - Bu.transpose()
@@ -144,7 +121,7 @@ class MagneticFlux(Flux):
 
     @ti.func
     def flux_hall(self, v, grad_B, rot_B):
-        v_rho, v_u, v_b = self.parse_vars(v)
+        v_rho, v_u, v_b = parse_vars(v)
 
         j = rot_B
         v_h = -self.delta_hall * j / v_rho
