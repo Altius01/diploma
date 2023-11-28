@@ -12,6 +12,7 @@ sympy = "*"
 scipy = "*"
 taichi = "*"
 click = "*"
+src = {file = "."}
 
 [dev-packages]
 ipykernel = "*"
