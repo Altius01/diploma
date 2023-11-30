@@ -1,16 +1,35 @@
+from abc import ABC, abstractclassmethod
 import taichi as ti
 from src.common.matrix_ops import get_basis
 
 from src.flux.limiters import minmod
 
 
-@ti.func
-def tvd_1order(
-    q: ti.template(),
-    idx: int,
-    axes: int = 0,
-):
-    return q(idx)
+class Reconstructor(ABC):
+    def __init__(self, axis):
+        self.axis = axis
+
+    @ti.func
+    @abstractclassmethod
+    def get_right(self, q: ti.template(), idx):
+        ...
+
+    @ti.func
+    @abstractclassmethod
+    def get_left(self, q: ti.template(), idx):
+        ...
+
+
+class FirstOrder(Reconstructor):
+    @ti.func
+    @abstractclassmethod
+    def get_right(self, q: ti.template(), idx):
+        return q(idx)
+
+    @ti.func
+    @abstractclassmethod
+    def get_left(self, q: ti.template(), idx):
+        return q(idx)
 
 
 @ti.func
