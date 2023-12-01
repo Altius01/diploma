@@ -7,10 +7,14 @@ from src.common.pointers import get_elem_1d
 @ti.func
 def _get_ghost_new_idx(ghost, size, idx):
     new_idx = idx
+
+    true_size = size - 2 * ghost
     if idx < ghost:
-        new_idx += size - 2 * ghost
-    elif idx >= size - ghost:
-        new_idx -= size - 2 * ghost
+        new_idx += true_size
+
+    if idx >= size - ghost:
+        new_idx -= true_size
+
     return new_idx
 
 

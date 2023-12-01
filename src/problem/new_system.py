@@ -78,9 +78,9 @@ class System:
                 self.rho[0].to_numpy(),
                 self.p[0].to_numpy(),
                 self.B_staggered[0].to_numpy(),
+                # self.E.to_numpy(),
                 # self.u[0].to_numpy(),
-                # self.B[0].to_numpy(),
-                self.E.to_numpy(),
+                self.B[0].to_numpy(),
             ),
         )
         Logger.log(
@@ -244,7 +244,7 @@ class System:
                             idx + get_basis(shift_axis),
                             idx + 2 * get_basis(shift_axis),
                             axis,
-                        )[axis]
+                        )[4 + axis]
 
                 emf[0] = (
                     emf_flux_l[2, 1]
@@ -259,9 +259,9 @@ class System:
                     - emf_flux_r[2, 0]
                 )
                 emf[2] = (
-                    # emf_flux_l[1, 0]
-                    # + emf_flux_r[1, 0]
-                    -emf_flux_l[0, 1]
+                    emf_flux_l[1, 0]
+                    + emf_flux_r[1, 0]
+                    - emf_flux_l[0, 1]
                     - emf_flux_r[0, 1]
                 )
 
@@ -293,7 +293,7 @@ class System:
 
         self.compute(self.rho[1], self.u[1], self.B[1], self.E)
 
-        # self.ghosts_periodic(self.E)
+        self.ghosts_periodic(self.E)
 
         self.sum_fields_u_1_order(self.u[0], self.u[1], dT, self.rho[0])
 
@@ -302,19 +302,19 @@ class System:
         self.div_fields_u_1_order(self.u[0], self.rho[0])
 
         self.computeB_staggered(self.E, self.B_staggered[1])
-        self.sum_fields_1_order(self.B_staggered[0], self.B_staggered[1], dT)
+        # self.sum_fields_1_order(self.B_staggered[0], self.B_staggered[1], dT)
 
         self.ghosts_periodic(self.B_staggered[0])
         self.convert_stag_grid(self.get_Bstag0, out_arr=self.B[0])
+
+        self.sum_fields_1_order(self.B[0], self.B[1], dT)
         self.ghosts_periodic(self.B[0])
 
         self.computeP(self.p[0], self.get_B0)
 
-        # self.ghosts_periodic(self.u[0])
-        # self.ghosts_periodic(self.rho[0])
-        # self.ghosts_periodic(self.p[0])
-
-        # self.ghosts_periodic(self.E)
+        self.ghosts_periodic(self.u[0])
+        self.ghosts_periodic(self.rho[0])
+        self.ghosts_periodic(self.p[0])
 
     @ti.func
     def get_B0(self, idx):
