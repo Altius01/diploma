@@ -1,6 +1,8 @@
 from re import I
 import taichi as ti
 
+from src.common.pointers import get_elem_1d
+
 
 @ti.func
 def _get_ghost_new_idx(ghost, size, idx):
@@ -13,11 +15,13 @@ def _get_ghost_new_idx(ghost, size, idx):
 
 
 @ti.func
-def get_ghost_new_idx(ghost, shape, idx):
+def get_ghost_new_idx(ghost, shape, idx, dim=2):
     new_idx = idx
 
-    for i in range(shape.n):
-        new_idx[i] = _get_ghost_new_idx(ghost[i], shape[i], idx[i])
+    for i in range(dim):
+        new_idx[i] = _get_ghost_new_idx(
+            get_elem_1d(ghost, i), get_elem_1d(shape, i), get_elem_1d(idx, i)
+        )
 
     return new_idx
 
@@ -44,5 +48,5 @@ def get_mirror_new_idx(ghost, shape, idx):
 
 
 @ti.func
-def _check_ghost(self, shape, ghost, idx):
+def _check_ghost(shape, ghost, idx):
     return (idx < ghost) or (idx >= shape - ghost)

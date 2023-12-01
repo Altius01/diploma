@@ -9,25 +9,21 @@ class Reconstructor(ABC):
     def __init__(self, axis):
         self.axis = axis
 
-    @ti.func
     @abstractclassmethod
     def get_right(self, q: ti.template(), idx):
-        ...
+        raise NotImplementedError
 
-    @ti.func
     @abstractclassmethod
     def get_left(self, q: ti.template(), idx):
-        ...
+        raise NotImplementedError
 
 
 class FirstOrder(Reconstructor):
     @ti.func
-    @abstractclassmethod
     def get_right(self, q: ti.template(), idx):
         return q(idx)
 
     @ti.func
-    @abstractclassmethod
     def get_left(self, q: ti.template(), idx):
         return q(idx)
 

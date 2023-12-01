@@ -1,4 +1,5 @@
 import os
+import shutil
 import sys
 import pyopencl as cl
 import taichi as ti
@@ -8,7 +9,7 @@ import h5py
 import numpy as np
 import matplotlib.pyplot as plt
 
-from new_src.new_system import TiSystem
+from src.problem.new_system import System, SystemConfig
 
 sys.path.append(Path(__file__).parent.parent.as_posix())
 
@@ -18,9 +19,6 @@ arch = ti.cpu
 ti.init(arch=arch, debug=True, device_memory_GB=6)
 
 from config import Config
-from taichi_src.data_process import TiDataProcessor
-from taichi_src.ti_solver import TiSolver
-
 
 PATH_CWD = Path(".")
 DNS_3D_DATA_PATH = PATH_CWD / "../DNS_3D"
@@ -30,30 +28,29 @@ DNS_2D_DATA_PATH = PATH_CWD / "../DNS_2D"
 DNS_2D_CONFIG_PATH = PATH_CWD / "../dns_2D_config.json"
 
 
-def main3D():
-    dns_3d_config = Config(file_path=DNS_3D_CONFIG_PATH)
-
-    dns_3d_solver = TiSolver(
-        config=dns_3d_config, data_path=DNS_3D_DATA_PATH, arch=arch
-    )
-
-    dns_3d_postprocess = TiDataProcessor(
-        config=dns_3d_config, data_path=DNS_3D_DATA_PATH
-    )
-
-    dns_3d_solver.solve()
+def remove(path):
+    """param <path> could either be relative or absolute."""
+    if os.path.isfile(path) or os.path.islink(path):
+        os.remove(path)  # remove the file
+    elif os.path.isdir(path):
+        shutil.rmtree(path)  # remove dir and all contains
+    else:
+        raise ValueError("file {} is not a file or dir.".format(path))
 
 
 def main2D():
     dns_2d_config = Config(file_path=DNS_2D_CONFIG_PATH)
 
-    dns_2d_solver = TiSystem(
-        config=dns_2d_config, data_path=DNS_2D_DATA_PATH, arch=arch
-    )
+    sys_Cfg = SystemConfig(dns_2d_config)
 
-    dns_2d_postprocess = TiDataProcessor(
-        config=dns_2d_config, data_path=DNS_2D_DATA_PATH
-    )
+    if DNS_2D_DATA_PATH.exists:
+        remove(DNS_2D_DATA_PATH)
+
+    dns_2d_solver = System(sys_Cfg, data_path=DNS_2D_DATA_PATH, arch=arch)
+
+    # dns_2d_postprocess = TiDataProcessor(
+    #     config=dns_2d_config, data_path=DNS_2D_DATA_PATH
+    # )
 
     dns_2d_solver.solve()
 

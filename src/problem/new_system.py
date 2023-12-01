@@ -1,91 +1,17 @@
-from dataclasses import dataclass
-from typing import List
 import numpy as np
 import taichi as ti
-from common.boundaries import _check_ghost, get_ghost_new_idx
-
-from common.config import Config
+from src.common.boundaries import _check_ghost, get_ghost_new_idx
 
 from common.logger import Logger
 from common.data_service import DataService
-from reconstruction.reconstructors import Reconstructor
+from src.common.pointers import get_elem_1d
+from src.problem.configs import ProblemConfig, SystemConfig
 from src.problem.new_problem import Problem
-from src.problem.problem import ProblemConfig
+from src.reconstruction.reconstructors import Reconstructor
 
 from src.common.types import *
 from src.common.matrix_ops import *
-
-
-@dataclass
-class SystemConfig:
-    CFL: float
-
-    rk_steps: int
-
-    initials: str
-    les_model: str
-
-    hall: bool
-    ideal: bool
-
-    h: List[float]
-
-    shape: List[int]
-    ghosts: List[int]
-    domain_size: List[int]
-
-    RHO0: float
-    U0: float
-    B0: float
-    eps_p: float
-
-    gamma: float
-    Re: float
-    Ms: float
-    Ma: float
-    Rem: float
-    nu_0: float
-    delta_hall: float
-
-    rw_del: int
-    end_time: float
-    start_step: int
-
-    def __init__(self, config: Config):
-        self.RHO0 = config.RHO0
-        self.U0 = config.U0
-        self.B0 = config.B0
-        self.eps_p = 1e-5
-        self.h = [0, 0, 0]
-        self.Re = config.Re
-        self.nu_0 = config.nu_0
-        self.Rem = config.Rem
-        self.delta_hall = config.delta_hall
-        self.Ma = config.Ma
-        self.Ms = config.Ms
-        self.gamma = config.gamma
-
-        self.CFL = config.CFL
-
-        self.rw_del = config.rw_del
-
-        self.end_time = config.end_time
-        self.start_step = config.start_step
-
-        self.rk_steps = 2
-        self.les_model = NonHallLES(config.model)
-        self.initials = Initials(config.initials)
-        self.ideal = config.ideal
-        self.hall = config.hall
-
-        self.dim = len(self.shape)
-
-        self.debug_fv_step = True
-
-        self.config = config
-        self.ghost = config.ghosts
-        self.shape = config.shape
-        self.true_shape = config.true_shape
+from src.spatial_diff.diff_fv import div_vec_2D
 
 
 @ti.data_oriented
@@ -118,12 +44,12 @@ class System:
 
         self.p = [
             ti.field(dtype=double, shape=self.config.shape)
-            for _ in range(self.rk_steps)
+            for _ in range(self.config.rk_steps)
         ]
 
         self.rho = [
             ti.field(dtype=double, shape=self.config.shape)
-            for _ in range(self.rk_steps)
+            for _ in range(self.config.rk_steps)
         ]
 
         self.problem = Problem(problem_cfg)
@@ -151,8 +77,10 @@ class System:
                 self.current_time,
                 self.rho[0].to_numpy(),
                 self.p[0].to_numpy(),
-                self.u[0].to_numpy(),
-                self.B[0].to_numpy(),
+                self.B_staggered[0].to_numpy(),
+                # self.u[0].to_numpy(),
+                # self.B[0].to_numpy(),
+                self.E.to_numpy(),
             ),
         )
         Logger.log(
@@ -160,11 +88,15 @@ class System:
         )
 
     @ti.func
-    def check_ghost_idx(self, shape, idx):
+    def check_ghost_idx(self, idx):
         result = False
 
-        for i in ti.ndrange(self.config.dim):
-            result = result or _check_ghost(shape[i], idx[i])
+        for i in range(self.config.dim):
+            result = result or _check_ghost(
+                get_elem_1d(self.config.shape, i),
+                get_elem_1d(self.config.ghosts, i),
+                idx[i],
+            )
 
         return result
 
@@ -203,7 +135,7 @@ class System:
             self.u[0][idx] = vec3(
                 [
                     -self.config.U0 * ti.math.sin(self.config.h[1] * y),
-                    self.config.U0 * ti.math.sin(self.confi[0] * x),
+                    self.config.U0 * ti.math.sin(self.config.h[0] * x),
                     0,
                 ]
             )
@@ -218,27 +150,37 @@ class System:
                 / sq_pi
             )
 
+    def get_static_int(self, axis):
+        match axis:
+            case 0:
+                return 0
+            case 1:
+                return 1
+            case 2:
+                return 2
+
     @ti.kernel
     def convert_stag_grid(self, in_arr: ti.template(), out_arr: ti.template()):
         for idx in ti.grouped(out_arr):
             if not self.check_ghost_idx(idx):
-                result = in_arr[idx]
+                result = in_arr(idx)
 
-                for i in ti.ndrange(self.config.dim):
-                    reco: Reconstructor = self.problem.reconstructors[i]
-
-                    result[i] = 0.5 * (
-                        reco.get_right(idx) + reco.get_left(idx + get_basis(i))
+                for i in ti.static(range(self.config.dim)):
+                    result[i] = (
+                        self.problem.reconstructors[i].get_right(in_arr, idx)[i]
+                        + self.problem.reconstructors[i].get_left(
+                            in_arr, idx + get_basis(i)
+                        )[i]
                     )
 
-                out_arr[idx] = result
+                out_arr[idx] = 0.5 * result
 
     def get_cfl(self):
         self.problem.update_data(self.rho[0], self.p[0], self.u[0], self.B[0])
         lambdas = self.problem.get_cfl_cond()
 
         dT = self.config.CFL * np.min(
-            [self.config.h[i] / lambdas[i] for i in self.config.dim]
+            [self.config.h[i] / lambdas[i] for i in range(self.config.dim)]
         )
 
         return dT
@@ -267,7 +209,7 @@ class System:
     def computeP(self, out: ti.template(), foo_B: ti.template()):
         for idx in ti.grouped(out):
             if not self.check_ghost_idx(idx):
-                out[idx] = self.div_vec(foo_B, self.config.h, idx)
+                out[idx] = div_vec_2D(foo_B, self.config.h, idx)
 
     @ti.kernel
     def compute(
@@ -277,29 +219,72 @@ class System:
         out_B: ti.template(),
         out_E: ti.template(),
     ):
-        for idx in ti.grouped(self.rho):
+        print(self.config.dim)
+        for idx in ti.grouped(self.rho[0]):
             if not self.check_ghost_idx(idx):
+                emf = vec3(0)
+                emf_flux_l = mat3x3(0)
+                emf_flux_r = mat3x3(0)
+
                 flux = vec7(0)
                 for axis in range(self.config.dim):
-                    flux_r = self.problem.get_flux_right(idx, idx + get_basis(axis))
-                    flux_l = self.problem.get_flux_right(idx - get_basis(axis), idx)
+                    flux_r = self.problem.get_flux_right(
+                        idx, idx + get_basis(axis), axis
+                    )
+                    flux_l = self.problem.get_flux_right(
+                        idx - get_basis(axis), idx, axis
+                    )
 
-                    flux += (flux_l - flux_r) / self.config.h[axis]
+                    flux += (flux_l - flux_r) / get_elem_1d(self.config.h, axis)
+
+                    emf_flux_l[axis, :] = flux_r[4:]
+
+                    for shift_axis in range(self.config.dim):
+                        emf_flux_r[axis, shift_axis] = self.problem.get_flux_right(
+                            idx + get_basis(shift_axis),
+                            idx + 2 * get_basis(shift_axis),
+                            axis,
+                        )[axis]
+
+                emf[0] = (
+                    emf_flux_l[2, 1]
+                    + emf_flux_r[2, 1]
+                    - emf_flux_l[1, 2]
+                    - emf_flux_r[1, 2]
+                )
+                emf[1] = (
+                    emf_flux_l[0, 2]
+                    + emf_flux_r[0, 2]
+                    - emf_flux_l[2, 0]
+                    - emf_flux_r[2, 0]
+                )
+                emf[2] = (
+                    # emf_flux_l[1, 0]
+                    # + emf_flux_r[1, 0]
+                    -emf_flux_l[0, 1]
+                    - emf_flux_r[0, 1]
+                )
+
+                out_E[idx] = 0.25 * emf
+
+                out_rho[idx] = flux[0]
+                out_u[idx] = flux[1:4]
+                out_B[idx] = flux[4:]
 
     @ti.kernel
     def computeB_staggered(self, E: ti.template(), B_stag_out: ti.template()):
-        for idx in ti.grouped(self.rho):
+        for idx in ti.grouped(self.rho[0]):
             if not self.check_ghost_idx(idx):
                 i, j, k = idx
 
                 ijk = vec3i([i, j, k])
                 ijm1k = vec3i([i, j - 1, k])
-                im1jm1k = vec3i([i - 1, j - 1, k])
 
                 res = vec3(0)
-                res[0] = -((E[ijk][2] - E[ijm1k][2])) / (self.h[1])
 
-                res[1] = -((E[im1jm1k][2] - E[ijm1k][2])) / (self.h[0])
+                res[0] = -((E[ijk][2] - E[ijm1k][2])) / (self.config.h[1])
+
+                res[1] = ((E[ijk][2] - E[ijm1k][2])) / (self.config.h[0])
 
                 B_stag_out[idx] = res
 
@@ -308,9 +293,7 @@ class System:
 
         self.compute(self.rho[1], self.u[1], self.B[1], self.E)
 
-        self.computeB_staggered(self.E, self.B_staggered[1])
-        self.sum_fields_1_order(self.B_staggered[0], self.B_staggered[1], dT)
-        self.ghosts_periodic(self.B_staggered[0])
+        # self.ghosts_periodic(self.E)
 
         self.sum_fields_u_1_order(self.u[0], self.u[1], dT, self.rho[0])
 
@@ -318,11 +301,28 @@ class System:
 
         self.div_fields_u_1_order(self.u[0], self.rho[0])
 
-        self.convert_stag_grid(in_arr=self.B_staggered[0], out_arr=self.B[0])
-        self.ghosts_periodic(self.B_staggered[0])
+        self.computeB_staggered(self.E, self.B_staggered[1])
+        self.sum_fields_1_order(self.B_staggered[0], self.B_staggered[1], dT)
 
-        self.computeP(self.p[0], ti.func(lambda idx: self.B[0][idx]))
-        self.ghosts_periodic(self.p[0])
+        self.ghosts_periodic(self.B_staggered[0])
+        self.convert_stag_grid(self.get_Bstag0, out_arr=self.B[0])
+        self.ghosts_periodic(self.B[0])
+
+        self.computeP(self.p[0], self.get_B0)
+
+        # self.ghosts_periodic(self.u[0])
+        # self.ghosts_periodic(self.rho[0])
+        # self.ghosts_periodic(self.p[0])
+
+        # self.ghosts_periodic(self.E)
+
+    @ti.func
+    def get_B0(self, idx):
+        return self.B[0][idx]
+
+    @ti.func
+    def get_Bstag0(self, idx):
+        return self.B_staggered[0][idx]
 
     def solve(self):
         self.current_time = 0
@@ -332,7 +332,7 @@ class System:
 
         Logger.log("Start solving.")
 
-        self.convert_stag_grid(in_arr=self.B[0], out_arr=self.B_staggered[0])
+        self.convert_stag_grid(self.get_B0, self.B_staggered[0])
         self.ghosts_periodic(self.B_staggered[0])
 
         while self.current_time < self.config.end_time or (

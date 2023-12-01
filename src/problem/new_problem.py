@@ -1,42 +1,12 @@
-from dataclasses import dataclass
 from typing import List
-from numpy import dtype
 
 import taichi as ti
-from common.matrix_ops import get_basis
-from reconstruction.reconstructors import FirstOrder, Reconstructor
-from src.common.boundaries import _check_ghost, get_ghost_new_idx
+from src.problem.configs import ProblemConfig
+from src.reconstruction.reconstructors import FirstOrder, Reconstructor
 
 from src.common.types import *
 from src.flux.flux import MagneticFlux, MomentumFlux, RhoFlux
 from src.flux.solvers import RoeSolver, Solver
-from src.spatial_diff.diff_fv import (
-    grad_sc_2D,
-    grad_vec_2D,
-    rot_vec_2D,
-)
-
-
-@dataclass
-class ProblemConfig:
-    gamma: double
-    Re: double
-    Ms: double
-    Ma: double
-    Rem: double
-    delta_hall: double
-
-    ghosts: int
-
-    shape: tuple
-    h: tuple
-    domain_size: tuple
-
-    ideal: bool
-    hall: bool
-    les: NonHallLES
-
-    dim: int
 
 
 @ti.data_oriented
@@ -66,7 +36,7 @@ class Problem:
             les=cfg.les,
         )
 
-        self.reconstructors: List[Reconstructor()] = [
+        self.reconstructors: List[Reconstructor] = [
             FirstOrder(axis) for axis in range(self.cfg.dim)
         ]
 
@@ -126,10 +96,10 @@ class Problem:
     def get_s_j_max(self, idx):
         result = vec3(0)
 
-        for axes in range(self.cfg.dim):
-            result[axes] = ti.abs(self.u[idx][ti.static(axes)]) + Solver(
-                self.solvers[axes]
-            ).get_max_eigenval(self.q(idx))
+        for axes in ti.static(range(self.cfg.dim)):
+            result[axes] = ti.abs(self.u[idx][axes]) + self.solvers[
+                axes
+            ].get_max_eigenval(self.q(idx))
 
         return result
 
@@ -149,6 +119,13 @@ class Problem:
 
     @ti.func
     def get_flux_right(self, idx_l, idx_r, axis):
-        result = self.solver[axis].get_conv(q_l=self.q(idx_l), q_r=self.q(idx_r))
+        result = self.solvers[0].get_conv(q_l=self.q(idx_l), q_r=self.q(idx_r))
+        if ti.static(self.cfg.dim > 1):
+            if axis == 1:
+                result = self.solvers[1].get_conv(q_l=self.q(idx_l), q_r=self.q(idx_r))
+
+        if ti.static(self.cfg.dim > 2):
+            if axis == 2:
+                result = self.solvers[2].get_conv(q_l=self.q(idx_l), q_r=self.q(idx_r))
 
         return result
