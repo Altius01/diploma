@@ -17,7 +17,7 @@ from src.problem.new_system import System, SystemConfig
 print(sys.path)
 
 arch = ti.cpu
-ti.init(arch=arch, debug=True, device_memory_GB=6)
+ti.init(arch=arch, debug=True, device_memory_GB=6, offline_cache_cleaning_policy="fifo")
 
 from config import Config
 
@@ -44,7 +44,7 @@ def main2D():
 
     sys_Cfg = SystemConfig(dns_2d_config)
 
-    if DNS_2D_DATA_PATH.exists:
+    if DNS_2D_DATA_PATH.exists():
         remove(DNS_2D_DATA_PATH)
 
     dns_2d_solver = System(sys_Cfg, data_path=DNS_2D_DATA_PATH, arch=arch)

@@ -77,9 +77,9 @@ class System:
                 self.current_time,
                 self.rho[0].to_numpy(),
                 self.p[0].to_numpy(),
-                self.B_staggered[0].to_numpy(),
+                # self.B_staggered[0].to_numpy(),
                 # self.E.to_numpy(),
-                # self.u[0].to_numpy(),
+                self.u[0].to_numpy(),
                 self.B[0].to_numpy(),
             ),
         )
@@ -91,11 +91,12 @@ class System:
     def check_ghost_idx(self, idx):
         result = False
 
-        for i in range(self.config.dim):
+        for axis_idx in ti.static(range(len(self.config.dim))):
+            axis = self.config.dim[axis_idx]
             result = result or _check_ghost(
-                get_elem_1d(self.config.shape, i),
-                get_elem_1d(self.config.ghosts, i),
-                idx[i],
+                get_elem_1d(self.config.shape, axis),
+                get_elem_1d(self.config.ghosts, axis),
+                idx[axis],
             )
 
         return result
@@ -109,12 +110,16 @@ class System:
                 ]
 
     @ti.kernel
-    def ghosts_mirror(self, out: ti.template()):
+    def ghosts_mirror(self, out: ti.template(), change_sign: ti.types.int8):
         for idx in ti.grouped(out):
             if self.check_ghost_idx(idx):
-                out[idx] = out[
+                res = out[
                     get_mirror_new_idx(self.config.ghosts, self.config.shape, idx)
                 ]
+
+                if change_sign != 0:
+                    res *= -1.0
+                out[idx] = res
 
     @ti.kernel
     def sum_fields_1_order(self, a: ti.template(), b: ti.template(), c1: double):
@@ -162,10 +167,16 @@ class System:
     def initials_SOD(self):
         sq_pi = ti.sqrt(4 * ti.math.pi)
         for idx in ti.grouped(self.rho[0]):
-            x, y, z = idx
-
             rho_ = 1.0
-            if x > 0.5 * self.config.shape[0]:
+            is_left = True
+
+            for axis_idx in ti.static(range(len(self.config.dim))):
+                axis = self.config.dim[axis_idx]
+                is_left = is_left and (
+                    idx[axis] < 0.5 * self.config.shape[self.config.dim[axis_idx]]
+                )
+
+            if not is_left:
                 rho_ = 0.1
 
             self.rho[0][idx] = rho_
@@ -173,7 +184,8 @@ class System:
             self.B[0][idx] = vec3(0)
 
             self.B[0][idx][0] = 3.0 / sq_pi
-            if x < 0.5 * self.config.shape[0]:
+
+            if is_left:
                 self.B[0][idx][1] = 5.0 / sq_pi
             else:
                 self.B[0][idx][1] = 2.0 / sq_pi
@@ -193,12 +205,15 @@ class System:
             if not self.check_ghost_idx(idx):
                 result = in_arr(idx)
 
-                for i in ti.static(range(self.config.dim)):
-                    result[i] = (
-                        self.problem.reconstructors[i].get_right(in_arr, idx)[i]
-                        + self.problem.reconstructors[i].get_left(
-                            in_arr, idx + get_basis(i)
-                        )[i]
+                for axis_idx in ti.static(range(len(self.config.dim))):
+                    axis = self.config.dim[axis_idx]
+                    result[axis] = (
+                        self.problem.reconstructors[axis_idx].get_right(in_arr, idx)[
+                            axis
+                        ]
+                        + self.problem.reconstructors[axis_idx].get_left(
+                            in_arr, idx + get_basis(j=axis)
+                        )[axis]
                     )
 
                 out_arr[idx] = 0.5 * result
@@ -208,7 +223,7 @@ class System:
         lambdas = self.problem.get_cfl_cond()
 
         dT = self.config.CFL * np.min(
-            [self.config.h[i] / lambdas[i] for i in range(self.config.dim)]
+            [self.config.h[i] / lambdas[i] for i in self.config.dim]
         )
 
         return dT
@@ -220,10 +235,10 @@ class System:
             # self.initials_OT()
 
             self.initials_SOD()
-            self.ghosts_mirror(self.rho[0])
-            self.ghosts_mirror(self.p[0])
-            self.ghosts_mirror(self.u[0])
-            self.ghosts_mirror(self.B[0])
+            self.ghosts_mirror(self.rho[0], 0)
+            self.ghosts_mirror(self.p[0], 0)
+            self.ghosts_mirror(self.u[0], 1)
+            self.ghosts_mirror(self.B[0], 0)
 
             self.save_file(self.current_step)
             Logger.log("Initials - done!")
@@ -248,7 +263,6 @@ class System:
         out_B: ti.template(),
         out_E: ti.template(),
     ):
-        print(self.config.dim)
         for idx in ti.grouped(self.rho[0]):
             if not self.check_ghost_idx(idx):
                 emf = vec3(0)
@@ -256,23 +270,25 @@ class System:
                 emf_flux_r = mat3x3(0)
 
                 flux = vec7(0)
-                for axis in range(self.config.dim):
+                for axis_idx in ti.static(range(len(self.config.dim))):
+                    axis = self.config.dim[axis_idx]
                     flux_r = self.problem.get_flux_right(
-                        idx, idx + get_basis(axis), axis
+                        idx, idx + get_basis(axis), axis_idx
                     )
                     flux_l = self.problem.get_flux_right(
-                        idx - get_basis(axis), idx, axis
+                        idx - get_basis(axis), idx, axis_idx
                     )
 
                     flux += (flux_l - flux_r) / get_elem_1d(self.config.h, axis)
 
                     emf_flux_l[axis, :] = flux_r[4:]
 
-                    for shift_axis in range(self.config.dim):
+                    for shift_axis_idx in ti.static(range(len(self.config.dim))):
+                        shift_axis = self.config.dim[shift_axis_idx]
                         emf_flux_r[axis, shift_axis] = self.problem.get_flux_right(
                             idx + get_basis(shift_axis),
                             idx + 2 * get_basis(shift_axis),
-                            axis,
+                            shift_axis_idx,
                         )[4 + axis]
 
                 emf[0] = (
@@ -322,7 +338,7 @@ class System:
 
         self.compute(self.rho[1], self.u[1], self.B[1], self.E)
 
-        self.ghosts_mirror(self.E)
+        self.ghosts_mirror(self.E, 0)
 
         self.sum_fields_u_1_order(self.u[0], self.u[1], dT, self.rho[0])
 
@@ -337,13 +353,13 @@ class System:
         # self.convert_stag_grid(self.get_Bstag0, out_arr=self.B[0])
 
         self.sum_fields_1_order(self.B[0], self.B[1], dT)
-        self.ghosts_mirror(self.B[0])
+        self.ghosts_mirror(self.B[0], 0)
 
         # self.computeP(self.p[0], self.get_B0)
 
-        self.ghosts_mirror(self.u[0])
-        self.ghosts_mirror(self.rho[0])
-        self.ghosts_mirror(self.p[0])
+        self.ghosts_mirror(self.u[0], 1)
+        self.ghosts_mirror(self.rho[0], 0)
+        self.ghosts_mirror(self.p[0], 0)
 
     @ti.func
     def get_B0(self, idx):
@@ -362,14 +378,15 @@ class System:
         Logger.log("Start solving.")
 
         self.convert_stag_grid(self.get_B0, self.B_staggered[0])
-        self.ghosts_mirror(self.B_staggered[0])
+        self.ghosts_mirror(self.B_staggered[0], 0)
 
+        Logger.log("ghosts_mirror.")
         while self.current_time < self.config.end_time or (
             self.current_step % self.config.rw_del != 0
         ):
             dT = self.get_cfl()
             # if self.debug_fv_step:
-            #     print(f"CFL: dT: {dT}")
+            print(f"CFL: dT: {dT}")
 
             self.current_time += dT
             self.current_step += 1

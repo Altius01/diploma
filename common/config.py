@@ -2,6 +2,8 @@ import json
 import math
 from pathlib import Path
 
+import numpy as np
+
 
 class Config:
     file_path = None
@@ -108,14 +110,6 @@ class Config:
                 )
             )
 
-            self.dim = 1
-            if self.true_shape[1] > 1:
-                self.dim = 2
-            if self.true_shape[2] > 1:
-                self.dim = 3
-
-            self.dim = 1
-
             self.true_v_shape = (3,) + self.true_shape
             self.true_mat_shape = (
                 3,
@@ -183,6 +177,9 @@ class Config:
                 self.rewrite_energy = True
             else:
                 self.rewrite_energy = False
+
+            self.dim = np.array(self.true_shape) - np.ones(3)
+            self.dim = np.where(self.dim > 0)[0]
 
     def _generate_defines(self):
         self.defines = []

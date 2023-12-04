@@ -18,14 +18,29 @@ class Reconstructor(ABC):
         raise NotImplementedError
 
 
+from src.common.types import *
+
+
 class FirstOrder(Reconstructor):
     @ti.func
     def get_right(self, q: ti.template(), idx):
-        return q(idx)
+        return vec3(0) + q(idx)
 
     @ti.func
     def get_left(self, q: ti.template(), idx):
-        return q(idx)
+        return vec3(0) + q(idx)
+
+
+class SecondOrder(Reconstructor):
+    @ti.func
+    def get_right(self, q: ti.template(), idx):
+        return vec3(0) + tvd_slope_limiter_2order(
+            q, idx + get_basis(self.axis), self.axis
+        )
+
+    @ti.func
+    def get_left(self, q: ti.template(), idx):
+        return vec3(0) + tvd_slope_limiter_2order(q, idx, self.axis)
 
 
 @ti.func

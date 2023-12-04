@@ -45,7 +45,8 @@ class Flux(ABC):
 class RhoFlux(Flux):
     @ti.func
     def flux_convective(self, q):
-        return vec3(q[1:4])
+        result = vec3(q[1:4])
+        return result
 
     @ti.func
     def flux_viscous(self, v, grad_U, grad_B):
@@ -84,7 +85,8 @@ class MomentumFlux(Flux):
         p = self.get_pressure(q_rho)
         BB = q_b.outer_product(q_b)
         rho_UU = q_u.outer_product(q_u) / q_rho
-        return rho_UU + (p + (0.5 / self.Ma**2) * q_b.norm_sqr()) * kron - BB
+        result = rho_UU + (p + (0.5 / self.Ma**2) * q_b.norm_sqr()) * kron - BB
+        return result
 
     @ti.func
     def flux_viscous(self, v, grad_U, grad_B):
@@ -113,7 +115,8 @@ class MagneticFlux(Flux):
         q_rho, q_u, q_b = parse_vars(q)
 
         Bu = q_b.outer_product(q_u) / q_rho
-        return Bu - Bu.transpose()
+        result = Bu - Bu.transpose()
+        return result
 
     @ti.func
     def flux_viscous(self, v, grad_U, grad_B):
