@@ -9,9 +9,10 @@ import h5py
 import numpy as np
 import matplotlib.pyplot as plt
 
+sys.path.append(Path(__file__).parent.parent.as_posix())
+
 from src.problem.new_system import System, SystemConfig
 
-sys.path.append(Path(__file__).parent.parent.as_posix())
 
 print(sys.path)
 

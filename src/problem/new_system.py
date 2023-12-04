@@ -1,6 +1,6 @@
 import numpy as np
 import taichi as ti
-from src.common.boundaries import _check_ghost, get_ghost_new_idx
+from src.common.boundaries import _check_ghost, get_ghost_new_idx, get_mirror_new_idx
 
 from common.logger import Logger
 from common.data_service import DataService
@@ -109,6 +109,14 @@ class System:
                 ]
 
     @ti.kernel
+    def ghosts_mirror(self, out: ti.template()):
+        for idx in ti.grouped(out):
+            if self.check_ghost_idx(idx):
+                out[idx] = out[
+                    get_mirror_new_idx(self.config.ghosts, self.config.shape, idx)
+                ]
+
+    @ti.kernel
     def sum_fields_1_order(self, a: ti.template(), b: ti.template(), c1: double):
         for idx in ti.grouped(a):
             a[idx] = a[idx] + c1 * b[idx]
@@ -150,6 +158,26 @@ class System:
                 / sq_pi
             )
 
+    @ti.kernel
+    def initials_SOD(self):
+        sq_pi = ti.sqrt(4 * ti.math.pi)
+        for idx in ti.grouped(self.rho[0]):
+            x, y, z = idx
+
+            rho_ = 1.0
+            if x > 0.5 * self.config.shape[0]:
+                rho_ = 0.1
+
+            self.rho[0][idx] = rho_
+            self.u[0][idx] = vec3(0)
+            self.B[0][idx] = vec3(0)
+
+            self.B[0][idx][0] = 3.0 / sq_pi
+            if x < 0.5 * self.config.shape[0]:
+                self.B[0][idx][1] = 5.0 / sq_pi
+            else:
+                self.B[0][idx][1] = 2.0 / sq_pi
+
     def get_static_int(self, axis):
         match axis:
             case 0:
@@ -189,12 +217,13 @@ class System:
         if self.config.start_step == 0:
             Logger.log("Start solve initials.")
 
-            self.initials_OT()
+            # self.initials_OT()
 
-            self.ghosts_periodic(self.rho[0])
-            self.ghosts_periodic(self.p[0])
-            self.ghosts_periodic(self.u[0])
-            self.ghosts_periodic(self.B[0])
+            self.initials_SOD()
+            self.ghosts_mirror(self.rho[0])
+            self.ghosts_mirror(self.p[0])
+            self.ghosts_mirror(self.u[0])
+            self.ghosts_mirror(self.B[0])
 
             self.save_file(self.current_step)
             Logger.log("Initials - done!")
@@ -293,7 +322,7 @@ class System:
 
         self.compute(self.rho[1], self.u[1], self.B[1], self.E)
 
-        self.ghosts_periodic(self.E)
+        self.ghosts_mirror(self.E)
 
         self.sum_fields_u_1_order(self.u[0], self.u[1], dT, self.rho[0])
 
@@ -301,20 +330,20 @@ class System:
 
         self.div_fields_u_1_order(self.u[0], self.rho[0])
 
-        self.computeB_staggered(self.E, self.B_staggered[1])
+        # self.computeB_staggered(self.E, self.B_staggered[1])
         # self.sum_fields_1_order(self.B_staggered[0], self.B_staggered[1], dT)
 
-        self.ghosts_periodic(self.B_staggered[0])
-        self.convert_stag_grid(self.get_Bstag0, out_arr=self.B[0])
+        # self.ghosts_mirror(self.B_staggered[0])
+        # self.convert_stag_grid(self.get_Bstag0, out_arr=self.B[0])
 
         self.sum_fields_1_order(self.B[0], self.B[1], dT)
-        self.ghosts_periodic(self.B[0])
+        self.ghosts_mirror(self.B[0])
 
-        self.computeP(self.p[0], self.get_B0)
+        # self.computeP(self.p[0], self.get_B0)
 
-        self.ghosts_periodic(self.u[0])
-        self.ghosts_periodic(self.rho[0])
-        self.ghosts_periodic(self.p[0])
+        self.ghosts_mirror(self.u[0])
+        self.ghosts_mirror(self.rho[0])
+        self.ghosts_mirror(self.p[0])
 
     @ti.func
     def get_B0(self, idx):
@@ -333,7 +362,7 @@ class System:
         Logger.log("Start solving.")
 
         self.convert_stag_grid(self.get_B0, self.B_staggered[0])
-        self.ghosts_periodic(self.B_staggered[0])
+        self.ghosts_mirror(self.B_staggered[0])
 
         while self.current_time < self.config.end_time or (
             self.current_step % self.config.rw_del != 0
