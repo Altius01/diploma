@@ -3,6 +3,7 @@ import taichi as ti
 from src.common.types import *
 from src.common.matrix_ops import static_get_len, static_get_shape
 
+
 @ti.func
 def get_elem_1d(arr: ti.template(), idx):
     result = arr[0]
@@ -115,7 +116,7 @@ def get_elem_3d(arr: ti.template(), idx):
 # @ti.func
 # def get_elem(arr: ti.template(), idx) -> double:
 #     idx_len = ti.static(static_get_len(idx))
-    
+
 #     if ti.static(idx_len==1):
 #         return get_elem_1d(arr, idx)
 #     elif ti.static(idx_len==2):

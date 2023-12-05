@@ -2,7 +2,12 @@ from typing import List
 
 import taichi as ti
 from src.problem.configs import ProblemConfig
-from src.reconstruction.reconstructors import FirstOrder, Reconstructor, SecondOrder
+from src.reconstruction.reconstructors import (
+    FirstOrder,
+    Reconstructor,
+    SecondOrder,
+    Weno5,
+)
 
 from src.common.types import *
 from src.flux.flux import MagneticFlux, MomentumFlux, RhoFlux
@@ -37,9 +42,10 @@ class Problem:
         )
 
         self.reconstructors: List[Reconstructor] = [
-            SecondOrder(axis)
+            # Weno5(axis)
+            # for axis in self.cfg.dim
+            FirstOrder(axis)
             for axis in self.cfg.dim
-            # FirstOrder(axis) for axis in self.cfg.dim
         ]
 
         self.solvers: List[Solver] = [

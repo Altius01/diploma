@@ -102,7 +102,7 @@ class System:
         return result
 
     @ti.kernel
-    def ghosts_periodic(self, out: ti.template()):
+    def ghosts_periodic(self, out: ti.template(), change_sign: ti.types.int8):
         for idx in ti.grouped(out):
             if self.check_ghost_idx(idx):
                 out[idx] = out[
@@ -142,26 +142,25 @@ class System:
     def initials_OT(self):
         sq_pi = ti.sqrt(4 * ti.math.pi)
         for idx in ti.grouped(self.rho[0]):
-            x, y, z = idx
+            _u = vec3(0)
+            _u[self.config.dim[0]] = -self.config.U0 * ti.math.sin(
+                self.config.h[self.config.dim[1]] * idx[self.config.dim[1]]
+            )
+            _u[self.config.dim[1]] = self.config.U0 * ti.math.sin(
+                self.config.h[self.config.dim[0]] * idx[self.config.dim[0]]
+            )
+
+            _B = vec3(0)
+            _B[self.config.dim[0]] = -self.config.B0 * ti.math.sin(
+                self.config.h[self.config.dim[1]] * idx[self.config.dim[1]]
+            )
+            _B[self.config.dim[1]] = self.config.B0 * ti.math.sin(
+                2.0 * self.config.h[self.config.dim[0]] * idx[self.config.dim[0]]
+            )
 
             self.rho[0][idx] = self.config.RHO0
-            self.u[0][idx] = vec3(
-                [
-                    -self.config.U0 * ti.math.sin(self.config.h[1] * y),
-                    self.config.U0 * ti.math.sin(self.config.h[0] * x),
-                    0,
-                ]
-            )
-            self.B[0][idx] = (
-                vec3(
-                    [
-                        -self.config.B0 * ti.math.sin(self.config.h[1] * y),
-                        self.config.B0 * ti.math.sin(2.0 * self.config.h[0] * x),
-                        0,
-                    ]
-                )
-                / sq_pi
-            )
+            self.u[0][idx] = _u
+            self.B[0][idx] = _B / sq_pi
 
     @ti.kernel
     def initials_SOD(self):
@@ -232,13 +231,13 @@ class System:
         if self.config.start_step == 0:
             Logger.log("Start solve initials.")
 
-            # self.initials_OT()
+            self.initials_OT()
 
-            self.initials_SOD()
-            self.ghosts_mirror(self.rho[0], 0)
-            self.ghosts_mirror(self.p[0], 0)
-            self.ghosts_mirror(self.u[0], 1)
-            self.ghosts_mirror(self.B[0], 0)
+            # self.initials_SOD()
+            self.ghosts_periodic(self.rho[0], 0)
+            self.ghosts_periodic(self.p[0], 0)
+            self.ghosts_periodic(self.u[0], 1)
+            self.ghosts_periodic(self.B[0], 0)
 
             self.save_file(self.current_step)
             Logger.log("Initials - done!")
@@ -280,7 +279,9 @@ class System:
                     )
 
                     flux += (flux_l - flux_r) / get_elem_1d(self.config.h, axis)
-
+                    # print(
+                    #     f"axis: {axis} flux: {(flux_l - flux_r) / get_elem_1d(self.config.h, axis)}"
+                    # )
                     emf_flux_l[axis, :] = flux_r[4:]
 
                     for shift_axis_idx in ti.static(range(len(self.config.dim))):
@@ -314,6 +315,8 @@ class System:
 
                 out_rho[idx] = flux[0]
                 out_u[idx] = flux[1:4]
+
+                # print(f"Flux_B: {flux[4:]}")
                 out_B[idx] = flux[4:]
 
     @ti.kernel
@@ -338,7 +341,7 @@ class System:
 
         self.compute(self.rho[1], self.u[1], self.B[1], self.E)
 
-        self.ghosts_mirror(self.E, 0)
+        self.ghosts_periodic(self.E, 0)
 
         self.sum_fields_u_1_order(self.u[0], self.u[1], dT, self.rho[0])
 
@@ -349,17 +352,17 @@ class System:
         # self.computeB_staggered(self.E, self.B_staggered[1])
         # self.sum_fields_1_order(self.B_staggered[0], self.B_staggered[1], dT)
 
-        # self.ghosts_mirror(self.B_staggered[0])
+        # self.ghosts_periodic(self.B_staggered[0], 0)
         # self.convert_stag_grid(self.get_Bstag0, out_arr=self.B[0])
 
         self.sum_fields_1_order(self.B[0], self.B[1], dT)
-        self.ghosts_mirror(self.B[0], 0)
+        self.ghosts_periodic(self.B[0], 0)
 
-        # self.computeP(self.p[0], self.get_B0)
+        self.computeP(self.p[0], self.get_B0)
 
-        self.ghosts_mirror(self.u[0], 1)
-        self.ghosts_mirror(self.rho[0], 0)
-        self.ghosts_mirror(self.p[0], 0)
+        self.ghosts_periodic(self.u[0], 1)
+        self.ghosts_periodic(self.rho[0], 0)
+        self.ghosts_periodic(self.p[0], 0)
 
     @ti.func
     def get_B0(self, idx):
@@ -378,9 +381,9 @@ class System:
         Logger.log("Start solving.")
 
         self.convert_stag_grid(self.get_B0, self.B_staggered[0])
-        self.ghosts_mirror(self.B_staggered[0], 0)
+        self.ghosts_periodic(self.B_staggered[0], 0)
 
-        Logger.log("ghosts_mirror.")
+        Logger.log("ghosts_periodic.")
         while self.current_time < self.config.end_time or (
             self.current_step % self.config.rw_del != 0
         ):

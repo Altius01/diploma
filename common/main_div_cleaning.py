@@ -16,7 +16,7 @@ from src.problem.new_system import System, SystemConfig
 
 print(sys.path)
 
-arch = ti.cpu
+arch = ti.gpu
 ti.init(arch=arch, debug=True, device_memory_GB=6, offline_cache_cleaning_policy="fifo")
 
 from config import Config

@@ -13,7 +13,7 @@ class Solver(ABC):
     def __init__(
         self, flux_rho: RhoFlux, flux_u: MomentumFlux, flux_b: MagneticFlux, axes=0
     ):
-        self.axes = 0
+        self.axes = axes
         self.flux_rho: RhoFlux = flux_rho
         self.flux_u: MomentumFlux = flux_u
         self.flux_b: MagneticFlux = flux_b

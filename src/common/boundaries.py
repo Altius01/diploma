@@ -19,7 +19,7 @@ def _get_ghost_new_idx(ghost, size, idx):
 
 
 @ti.func
-def get_ghost_new_idx(ghost, shape, idx, dim=2):
+def get_ghost_new_idx(ghost, shape, idx, dim=3):
     new_idx = idx
 
     for i in range(dim):
