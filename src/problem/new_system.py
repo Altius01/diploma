@@ -288,8 +288,8 @@ class System:
                         shift_axis = self.config.dim[shift_axis_idx]
                         emf_flux_r[axis, shift_axis] = self.problem.get_flux_right(
                             idx + get_basis(shift_axis),
-                            idx + 2 * get_basis(shift_axis),
-                            shift_axis_idx,
+                            idx + get_basis(axis) + get_basis(shift_axis),
+                            axis_idx,
                         )[4 + axis]
 
                 emf[0] = (
@@ -349,13 +349,15 @@ class System:
 
         self.div_fields_u_1_order(self.u[0], self.rho[0])
 
-        # self.computeB_staggered(self.E, self.B_staggered[1])
-        # self.sum_fields_1_order(self.B_staggered[0], self.B_staggered[1], dT)
+        self.computeB_staggered(self.E, self.B_staggered[1])
+        self.sum_fields_1_order(self.B_staggered[0], self.B_staggered[1], dT)
 
-        # self.ghosts_periodic(self.B_staggered[0], 0)
-        # self.convert_stag_grid(self.get_Bstag0, out_arr=self.B[0])
+        self.ghosts_periodic(self.B_staggered[0], 0)
 
-        self.sum_fields_1_order(self.B[0], self.B[1], dT)
+        self.convert_stag_grid(self.get_Bstag0, out_arr=self.B[0])
+
+        # self.sum_fields_1_order(self.B[0], self.B[1], dT)
+
         self.ghosts_periodic(self.B[0], 0)
 
         self.computeP(self.p[0], self.get_B0)
