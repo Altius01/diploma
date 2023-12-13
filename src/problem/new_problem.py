@@ -49,8 +49,8 @@ class Problem:
         ]
 
         self.solvers: List[Solver] = [
-            HLLDSolver(self.rho_computer, self.u_computer, self.B_computer, axis)
-            # RoeSolver(self.rho_computer, self.u_computer, self.B_computer, axis)
+            # HLLDSolver(self.rho_computer, self.u_computer, self.B_computer, axis)
+            RoeSolver(self.rho_computer, self.u_computer, self.B_computer, axis)
             for axis in self.cfg.dim
         ]
 

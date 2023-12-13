@@ -11,7 +11,7 @@ from src.reconstruction.reconstructors import Reconstructor
 
 from src.common.types import *
 from src.common.matrix_ops import *
-from src.spatial_diff.diff_fv import div_vec_2D
+from src.spatial_diff.diff_fv import div_vec_2D, rot_vec_2D
 
 
 @ti.data_oriented
@@ -80,7 +80,7 @@ class System:
                 # self.B_staggered[0].to_numpy(),
                 # self.E.to_numpy(),
                 self.E.to_numpy(),
-                self.B[0].to_numpy(),
+                self.B_staggered[1].to_numpy(),
             ),
         )
         Logger.log(
@@ -324,20 +324,16 @@ class System:
                 i, j, k = idx
 
                 ijk = vec3i([i, j, k])
-                ijp1k = vec3i([i, j - 1, k])
+                ijp1k = vec3i([i, j + 1, k])
                 ijm1k = vec3i([i, j - 1, k])
-                ip1jk = vec3i([i - 1, j, k])
+                ip1jk = vec3i([i + 1, j, k])
                 im1jk = vec3i([i - 1, j, k])
 
                 res = vec3(0)
 
-                res[0] = -((E[ijk][2] - E[ijm1k][2]) + (E[ijp1k][2] - E[ijk][2])) / (
-                    2.0 * (self.config.h[1])
-                )
+                res[0] = -((E[ijk][2] - E[ijm1k][2])) / ((self.config.h[1]))
 
-                res[1] = +((E[ijk][2] - E[im1jk][2]) + (E[ip1jk][2] - E[ijk][2])) / (
-                    2.0 * (self.config.h[0])
-                )
+                res[1] = +((E[ijk][2] - E[im1jk][2])) / ((self.config.h[0]))
 
                 B_stag_out[idx] = res
 
@@ -355,7 +351,7 @@ class System:
         self.div_fields_u_1_order(self.u[0], self.rho[0])
 
         self.computeB_staggered(self.E, self.B_staggered[1])
-        # self.ghosts_periodic(self.B_staggered[1], 0)
+        self.ghosts_periodic(self.B_staggered[1], 0)
 
         # self.E = self.B_staggered[1]
 
@@ -369,7 +365,7 @@ class System:
 
         self.ghosts_periodic(self.B[0], 0)
 
-        self.computeP(self.p[0], self.get_B0)
+        self.computeP(self.p[0], self.get_Bstag1)
 
         self.ghosts_periodic(self.u[0], 0)
         self.ghosts_periodic(self.rho[0], 0)
@@ -386,6 +382,10 @@ class System:
     @ti.func
     def get_Bstag1(self, idx):
         return self.B_staggered[1][idx]
+
+    @ti.func
+    def get_E(self, idx):
+        return self.E[idx]
 
     def solve(self):
         self.current_time = 0

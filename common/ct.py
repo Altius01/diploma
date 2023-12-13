@@ -366,8 +366,8 @@ def main():
     gamma = 5 / 3  # ideal gas gamma
     courant_fac = 0.4
     t = 0
-    tEnd = 0.5
-    tOut = 0.01  # draw frequency
+    tEnd = 50.0
+    tOut = 0.1  # draw frequency
     useSlopeLimiting = False
     plotRealTime = True  # switch on for plotting as the simulation goes along
 
