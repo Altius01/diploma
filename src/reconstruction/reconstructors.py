@@ -28,7 +28,7 @@ class FirstOrder(Reconstructor):
 
     @ti.func
     def get_left(self, q: ti.template(), idx):
-        return vec3(0) + q(idx)
+        return vec3(0) + q(idx + get_basis(self.axis))
 
 
 class SecondOrder(Reconstructor):

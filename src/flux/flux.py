@@ -85,7 +85,11 @@ class MomentumFlux(Flux):
         p = self.get_pressure(q_rho)
         BB = q_b.outer_product(q_b)
         rho_UU = q_u.outer_product(q_u) / q_rho
-        result = rho_UU + (p + (0.5 / self.Ma**2) * q_b.norm_sqr()) * kron - BB
+        result = (
+            rho_UU
+            + (p + (0.5 / self.Ma**2) * q_b.norm_sqr()) * kron
+            - BB * (1.0 / self.Ma**2)
+        )
         return result
 
     @ti.func

@@ -202,13 +202,21 @@ def extrapolateInSpaceToFace(f, f_dx, f_dy, dx):
     R = -1  # right
     L = 1  # left
 
-    f_XL = f - f_dx * dx / 2
-    f_XL = np.roll(f_XL, R, axis=0)
-    f_XR = f + f_dx * dx / 2
+    # f_XL = f - f_dx * dx / 2
+    # f_XL = np.roll(f_XL, R, axis=0)
+    # f_XR = f + f_dx * dx / 2
 
-    f_YL = f - f_dy * dx / 2
+    # f_YL = f - f_dy * dx / 2
+    # f_YL = np.roll(f_YL, R, axis=1)
+    # f_YR = f + f_dy * dx / 2
+
+    f_XL = f
+    f_XL = np.roll(f_XL, R, axis=0)
+    f_XR = f
+
+    f_YL = f
     f_YL = np.roll(f_YL, R, axis=1)
-    f_YR = f + f_dy * dx / 2
+    f_YR = f
 
     return f_XL, f_XR, f_YL, f_YR
 
@@ -360,7 +368,7 @@ def main():
     t = 0
     tEnd = 0.5
     tOut = 0.01  # draw frequency
-    useSlopeLimiting = True
+    useSlopeLimiting = False
     plotRealTime = True  # switch on for plotting as the simulation goes along
 
     # Mesh
@@ -430,56 +438,66 @@ def main():
             Bx_dx, Bx_dy = slopeLimit(Bx, dx, Bx_dx, Bx_dy)
             By_dx, By_dy = slopeLimit(By, dx, By_dx, By_dy)
 
-        # extrapolate half-step in time
-        rho_prime = rho - 0.5 * dt * (
-            vx * rho_dx + rho * vx_dx + vy * rho_dy + rho * vy_dy
-        )
-        vx_prime = vx - 0.5 * dt * (
-            vx * vx_dx
-            + vy * vx_dy
-            + (1 / rho) * P_dx
-            - (2 * Bx / rho) * Bx_dx
-            - (By / rho) * Bx_dy
-            - (Bx / rho) * By_dy
-        )
-        vy_prime = vy - 0.5 * dt * (
-            vx * vy_dx
-            + vy * vy_dy
-            + (1 / rho) * P_dy
-            - (2 * By / rho) * By_dy
-            - (Bx / rho) * By_dx
-            - (By / rho) * Bx_dx
-        )
-        P_prime = P - 0.5 * dt * (
-            (gamma * (P - 0.5 * (Bx**2 + By**2)) + By**2) * vx_dx
-            - Bx * By * vy_dx
-            + vx * P_dx
-            + (gamma - 2) * (Bx * vx + By * vy) * Bx_dx
-            - By * Bx * vx_dy
-            + (gamma * (P - 0.5 * (Bx**2 + By**2)) + Bx**2) * vy_dy
-            + vy * P_dy
-            + (gamma - 2) * (Bx * vx + By * vy) * By_dy
-        )
-        Bx_prime = Bx - 0.5 * dt * (-By * vx_dy + Bx * vy_dy + vy * Bx_dy - vx * By_dy)
-        By_prime = By - 0.5 * dt * (By * vx_dx - Bx * vy_dx - vy * Bx_dx + vx * By_dx)
+        # # extrapolate half-step in time
+        # rho_prime = rho - 0.5 * dt * (
+        #     vx * rho_dx + rho * vx_dx + vy * rho_dy + rho * vy_dy
+        # )
+        # vx_prime = vx - 0.5 * dt * (
+        #     vx * vx_dx
+        #     + vy * vx_dy
+        #     + (1 / rho) * P_dx
+        #     - (2 * Bx / rho) * Bx_dx
+        #     - (By / rho) * Bx_dy
+        #     - (Bx / rho) * By_dy
+        # )
+        # vy_prime = vy - 0.5 * dt * (
+        #     vx * vy_dx
+        #     + vy * vy_dy
+        #     + (1 / rho) * P_dy
+        #     - (2 * By / rho) * By_dy
+        #     - (Bx / rho) * By_dx
+        #     - (By / rho) * Bx_dx
+        # )
+        # P_prime = P - 0.5 * dt * (
+        #     (gamma * (P - 0.5 * (Bx**2 + By**2)) + By**2) * vx_dx
+        #     - Bx * By * vy_dx
+        #     + vx * P_dx
+        #     + (gamma - 2) * (Bx * vx + By * vy) * Bx_dx
+        #     - By * Bx * vx_dy
+        #     + (gamma * (P - 0.5 * (Bx**2 + By**2)) + Bx**2) * vy_dy
+        #     + vy * P_dy
+        #     + (gamma - 2) * (Bx * vx + By * vy) * By_dy
+        # )
+        # Bx_prime = Bx - 0.5 * dt * (-By * vx_dy + Bx * vy_dy + vy * Bx_dy - vx * By_dy)
+        # By_prime = By - 0.5 * dt * (By * vx_dx - Bx * vy_dx - vy * Bx_dx + vx * By_dx)
+
+        # # extrapolate in space to face centers
+        # rho_XL, rho_XR, rho_YL, rho_YR = extrapolateInSpaceToFace(
+        #     rho_prime, rho_dx, rho_dy, dx
+        # )
+        # vx_XL, vx_XR, vx_YL, vx_YR = extrapolateInSpaceToFace(
+        #     vx_prime, vx_dx, vx_dy, dx
+        # )
+        # vy_XL, vy_XR, vy_YL, vy_YR = extrapolateInSpaceToFace(
+        #     vy_prime, vy_dx, vy_dy, dx
+        # )
+        # P_XL, P_XR, P_YL, P_YR = extrapolateInSpaceToFace(P_prime, P_dx, P_dy, dx)
+        # Bx_XL, Bx_XR, Bx_YL, Bx_YR = extrapolateInSpaceToFace(
+        #     Bx_prime, Bx_dx, Bx_dy, dx
+        # )
+        # By_XL, By_XR, By_YL, By_YR = extrapolateInSpaceToFace(
+        #     By_prime, By_dx, By_dy, dx
+        # )
 
         # extrapolate in space to face centers
         rho_XL, rho_XR, rho_YL, rho_YR = extrapolateInSpaceToFace(
-            rho_prime, rho_dx, rho_dy, dx
+            rho, rho_dx, rho_dy, dx
         )
-        vx_XL, vx_XR, vx_YL, vx_YR = extrapolateInSpaceToFace(
-            vx_prime, vx_dx, vx_dy, dx
-        )
-        vy_XL, vy_XR, vy_YL, vy_YR = extrapolateInSpaceToFace(
-            vy_prime, vy_dx, vy_dy, dx
-        )
-        P_XL, P_XR, P_YL, P_YR = extrapolateInSpaceToFace(P_prime, P_dx, P_dy, dx)
-        Bx_XL, Bx_XR, Bx_YL, Bx_YR = extrapolateInSpaceToFace(
-            Bx_prime, Bx_dx, Bx_dy, dx
-        )
-        By_XL, By_XR, By_YL, By_YR = extrapolateInSpaceToFace(
-            By_prime, By_dx, By_dy, dx
-        )
+        vx_XL, vx_XR, vx_YL, vx_YR = extrapolateInSpaceToFace(vx, vx_dx, vx_dy, dx)
+        vy_XL, vy_XR, vy_YL, vy_YR = extrapolateInSpaceToFace(vy, vy_dx, vy_dy, dx)
+        P_XL, P_XR, P_YL, P_YR = extrapolateInSpaceToFace(P, P_dx, P_dy, dx)
+        Bx_XL, Bx_XR, Bx_YL, Bx_YR = extrapolateInSpaceToFace(Bx, Bx_dx, Bx_dy, dx)
+        By_XL, By_XR, By_YL, By_YR = extrapolateInSpaceToFace(By, By_dx, By_dy, dx)
 
         # compute fluxes (local Lax-Friedrichs/Rusanov)
         flux_Mass_X, flux_Momx_X, flux_Momy_X, flux_Energy_X, flux_By_X = getFlux(

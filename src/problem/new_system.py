@@ -77,10 +77,10 @@ class System:
                 self.current_time,
                 self.rho[0].to_numpy(),
                 self.p[0].to_numpy(),
-                self.B_staggered[0].to_numpy(),
+                # self.B_staggered[0].to_numpy(),
                 # self.E.to_numpy(),
-                # self.u[0].to_numpy(),
-                self.B_staggered[1].to_numpy(),
+                self.E.to_numpy(),
+                self.B[0].to_numpy(),
             ),
         )
         Logger.log(
@@ -202,18 +202,11 @@ class System:
     def convert_stag_grid(self, in_arr: ti.template(), out_arr: ti.template()):
         for idx in ti.grouped(out_arr):
             if not self.check_ghost_idx(idx):
-                result = in_arr(idx)
+                result = 2.0 * in_arr(idx)
 
-                for axis_idx in ti.static(range(len(self.config.dim))):
-                    axis = self.config.dim[axis_idx]
-                    result[axis] = (
-                        self.problem.reconstructors[axis_idx].get_right(in_arr, idx)[
-                            axis
-                        ]
-                        + self.problem.reconstructors[axis_idx].get_left(
-                            in_arr, idx + get_basis(j=axis)
-                        )[axis]
-                    )
+                # for axis_idx in ti.static(range(len(self.config.dim))):
+                #     axis = self.config.dim[axis_idx]
+                #     result[axis] += in_arr(idx + get_basis(axis))[axis]
 
                 out_arr[idx] = 0.5 * result
 
@@ -273,31 +266,29 @@ class System:
                 flux = vec7(0)
                 for axis_idx in range(ti_dim.n):
                     axis = ti_dim[axis_idx]
+
                     flux_r = self.problem.get_flux_right(
-                        idx, idx + get_basis(axis), axis_idx
+                        idx, idx + get_basis(axis), axis
                     )
                     flux_l = self.problem.get_flux_right(
-                        idx - get_basis(axis), idx, axis_idx
+                        idx - get_basis(axis), idx, axis
                     )
 
                     flux += (flux_l - flux_r) / get_elem_1d(self.config.h, axis)
                     # print(
                     #     f"axis: {axis} flux: {(flux_l - flux_r) / get_elem_1d(self.config.h, axis)}"
                     # )
-                    emf_flux_l[axis, :] = (flux_l - flux_r)[4:] / get_elem_1d(
-                        self.config.h, axis
-                    )
+                    emf_flux_l[axis, :] = flux_r[4:]
 
                     for shift_axis_idx in range(ti_dim.n):
                         shift_axis = ti_dim[shift_axis_idx]
+
                         flux_r_ = self.problem.get_flux_right(
                             idx + get_basis(shift_axis),
                             idx + get_basis(axis) + get_basis(shift_axis),
-                            axis_idx,
+                            axis,
                         )
-                        emf_flux_r[axis, shift_axis] = (flux_l - flux_r_)[
-                            4 + axis
-                        ] / get_elem_1d(self.config.h, axis)
+                        emf_flux_r[axis, shift_axis] = flux_r_[4 + shift_axis]
 
                 emf[0] = (
                     emf_flux_l[2, 1]
@@ -318,7 +309,7 @@ class System:
                     - emf_flux_r[0, 1]
                 )
 
-                out_E[idx] = emf
+                out_E[idx] = 0.25 * emf
 
                 out_rho[idx] = flux[0]
                 out_u[idx] = flux[1:4]
@@ -333,14 +324,20 @@ class System:
                 i, j, k = idx
 
                 ijk = vec3i([i, j, k])
+                ijp1k = vec3i([i, j - 1, k])
                 ijm1k = vec3i([i, j - 1, k])
+                ip1jk = vec3i([i - 1, j, k])
                 im1jk = vec3i([i - 1, j, k])
 
                 res = vec3(0)
 
-                res[0] = -((E[ijk][2] - E[ijm1k][2])) / (self.config.h[1])
+                res[0] = -((E[ijk][2] - E[ijm1k][2]) + (E[ijp1k][2] - E[ijk][2])) / (
+                    2.0 * (self.config.h[1])
+                )
 
-                res[1] = ((E[ijk][2] - E[im1jk][2])) / (self.config.h[0])
+                res[1] = +((E[ijk][2] - E[im1jk][2]) + (E[ip1jk][2] - E[ijk][2])) / (
+                    2.0 * (self.config.h[0])
+                )
 
                 B_stag_out[idx] = res
 
@@ -358,17 +355,17 @@ class System:
         self.div_fields_u_1_order(self.u[0], self.rho[0])
 
         self.computeB_staggered(self.E, self.B_staggered[1])
-        self.ghosts_periodic(self.B_staggered[1], 0)
+        # self.ghosts_periodic(self.B_staggered[1], 0)
 
         # self.E = self.B_staggered[1]
 
         self.sum_fields_1_order(self.B_staggered[0], self.B_staggered[1], dT)
 
-        self.ghosts_periodic(self.B_staggered[0], 0)
+        # self.ghosts_periodic(self.B_staggered[0], 0)
 
         self.convert_stag_grid(self.get_Bstag0, out_arr=self.B[0])
 
-        # self.sum_fields_1_order(self.B[0], self.B[1], dT)
+        self.sum_fields_1_order(self.B[0], self.B[1], dT)
 
         self.ghosts_periodic(self.B[0], 0)
 
@@ -376,7 +373,7 @@ class System:
 
         self.ghosts_periodic(self.u[0], 0)
         self.ghosts_periodic(self.rho[0], 0)
-        self.ghosts_periodic(self.p[0], 0)
+        # self.ghosts_periodic(self.p[0], 0)
 
     @ti.func
     def get_B0(self, idx):
@@ -399,7 +396,6 @@ class System:
         Logger.log("Start solving.")
 
         self.convert_stag_grid(self.get_B0, self.B_staggered[0])
-        self.ghosts_periodic(self.B_staggered[0], 0)
 
         Logger.log("ghosts_periodic.")
         while self.current_time < self.config.end_time or (
