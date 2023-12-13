@@ -42,9 +42,9 @@ class Problem:
         )
 
         self.reconstructors: List[Reconstructor] = [
-            # Weno5(axis)
+            Weno5(axis)
             # for axis in self.cfg.dim
-            FirstOrder(axis)
+            # FirstOrder(axis)
             for axis in self.cfg.dim
         ]
 

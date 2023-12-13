@@ -77,10 +77,10 @@ class System:
                 self.current_time,
                 self.rho[0].to_numpy(),
                 self.p[0].to_numpy(),
-                # self.B_staggered[0].to_numpy(),
+                self.B_staggered[0].to_numpy(),
                 # self.E.to_numpy(),
-                self.u[0].to_numpy(),
-                self.B[0].to_numpy(),
+                # self.u[0].to_numpy(),
+                self.B_staggered[1].to_numpy(),
             ),
         )
         Logger.log(
@@ -238,6 +238,7 @@ class System:
             self.ghosts_periodic(self.p[0], 0)
             self.ghosts_periodic(self.u[0], 1)
             self.ghosts_periodic(self.B[0], 0)
+            self.convert_stag_grid(self.get_B0, self.B_staggered[0])
 
             self.save_file(self.current_step)
             Logger.log("Initials - done!")
@@ -262,6 +263,7 @@ class System:
         out_B: ti.template(),
         out_E: ti.template(),
     ):
+        ti_dim = ti.Vector(self.config.dim)
         for idx in ti.grouped(self.rho[0]):
             if not self.check_ghost_idx(idx):
                 emf = vec3(0)
@@ -269,8 +271,8 @@ class System:
                 emf_flux_r = mat3x3(0)
 
                 flux = vec7(0)
-                for axis_idx in ti.static(range(len(self.config.dim))):
-                    axis = self.config.dim[axis_idx]
+                for axis_idx in range(ti_dim.n):
+                    axis = ti_dim[axis_idx]
                     flux_r = self.problem.get_flux_right(
                         idx, idx + get_basis(axis), axis_idx
                     )
@@ -282,15 +284,20 @@ class System:
                     # print(
                     #     f"axis: {axis} flux: {(flux_l - flux_r) / get_elem_1d(self.config.h, axis)}"
                     # )
-                    emf_flux_l[axis, :] = flux_r[4:]
+                    emf_flux_l[axis, :] = (flux_l - flux_r)[4:] / get_elem_1d(
+                        self.config.h, axis
+                    )
 
-                    for shift_axis_idx in ti.static(range(len(self.config.dim))):
-                        shift_axis = self.config.dim[shift_axis_idx]
-                        emf_flux_r[axis, shift_axis] = self.problem.get_flux_right(
+                    for shift_axis_idx in range(ti_dim.n):
+                        shift_axis = ti_dim[shift_axis_idx]
+                        flux_r_ = self.problem.get_flux_right(
                             idx + get_basis(shift_axis),
                             idx + get_basis(axis) + get_basis(shift_axis),
                             axis_idx,
-                        )[4 + axis]
+                        )
+                        emf_flux_r[axis, shift_axis] = (flux_l - flux_r_)[
+                            4 + axis
+                        ] / get_elem_1d(self.config.h, axis)
 
                 emf[0] = (
                     emf_flux_l[2, 1]
@@ -311,7 +318,7 @@ class System:
                     - emf_flux_r[0, 1]
                 )
 
-                out_E[idx] = 0.25 * emf
+                out_E[idx] = emf
 
                 out_rho[idx] = flux[0]
                 out_u[idx] = flux[1:4]
@@ -327,12 +334,13 @@ class System:
 
                 ijk = vec3i([i, j, k])
                 ijm1k = vec3i([i, j - 1, k])
+                im1jk = vec3i([i - 1, j, k])
 
                 res = vec3(0)
 
                 res[0] = -((E[ijk][2] - E[ijm1k][2])) / (self.config.h[1])
 
-                res[1] = ((E[ijk][2] - E[ijm1k][2])) / (self.config.h[0])
+                res[1] = ((E[ijk][2] - E[im1jk][2])) / (self.config.h[0])
 
                 B_stag_out[idx] = res
 
@@ -350,6 +358,10 @@ class System:
         self.div_fields_u_1_order(self.u[0], self.rho[0])
 
         self.computeB_staggered(self.E, self.B_staggered[1])
+        self.ghosts_periodic(self.B_staggered[1], 0)
+
+        # self.E = self.B_staggered[1]
+
         self.sum_fields_1_order(self.B_staggered[0], self.B_staggered[1], dT)
 
         self.ghosts_periodic(self.B_staggered[0], 0)
@@ -362,7 +374,7 @@ class System:
 
         self.computeP(self.p[0], self.get_B0)
 
-        self.ghosts_periodic(self.u[0], 1)
+        self.ghosts_periodic(self.u[0], 0)
         self.ghosts_periodic(self.rho[0], 0)
         self.ghosts_periodic(self.p[0], 0)
 
@@ -373,6 +385,10 @@ class System:
     @ti.func
     def get_Bstag0(self, idx):
         return self.B_staggered[0][idx]
+
+    @ti.func
+    def get_Bstag1(self, idx):
+        return self.B_staggered[1][idx]
 
     def solve(self):
         self.current_time = 0
