@@ -53,9 +53,7 @@ def test_grad_scalar_field(
 
     ti_field.from_numpy(field)
 
-    ti_grad = ti.Vector.field(n=3, dtype=double, shape=(N, N, N))
-
-    print(ti_field.shape, ti_grad.shape)
+    ti_grad = ti.Vector.field(n=3, dtype=double, shape=field.shape)
 
     @ti.func
     def get_field(idx):
@@ -63,9 +61,39 @@ def test_grad_scalar_field(
 
     compute_gradient(get_field, ti_grad, step, N, N_ghsot)
 
-    ti_grad = ti_grad.to_numpy()
+    ti_grad = ti_grad.to_numpy()[
+        N_ghsot:-N_ghsot,
+        N_ghsot:-N_ghsot,
+        N_ghsot:-N_ghsot,
+    ]
 
-    print(np.max(np.abs(field)))
+    print(grad_field.shape, ti_grad.shape)
 
-    print(np.max(np.abs(ti_grad)), np.max(np.abs(grad_field)))
+    import matplotlib.pyplot as plt
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection="3d")
+    # ax2 = fig.add_subplot(121, projection="3d")
+
+    surface = ax.plot_surface(
+        x1[0, :, :, 0],
+        x1[1, :, :, 0],
+        (ti_grad - grad_field)[:, :, 0, 2],
+        cmap=plt.cm.coolwarm,
+        rstride=2,
+        cstride=2,
+    )
+
+    # surface2 = ax2.plot_surface(
+    #     x1[0, :, :, 0],
+    #     x1[1, :, :, 0],
+    #     grad_field[:, :, 4, 1],
+    #     cmap=plt.cm.coolwarm,
+    #     rstride=2,
+    #     cstride=2,
+    # )
+
+    plt.show()
+    print(np.mean(ti_grad - grad_field))
+
     assert np.allclose(grad_field, ti_grad)
