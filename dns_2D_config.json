@@ -1,10 +1,10 @@
 
 {
-    "ghosts": [3, 3, 3], 
-    "shape": [64, 64, 64], 
-    "size": [6.283185307179586, 6.283185307179586, 6.283185307179586], 
-    "rw_delemiter": 10,
-    "end_time": 0.1,
+    "ghosts": [3, 3, 1], 
+    "shape": [64, 64, 1], 
+    "size": [6.283185307179586, 6.283185307179586, 1], 
+    "rw_delemiter": 40,
+    "end_time": 3.0,
     "start_step": 0,
     "model": "DNS",
     "initials": "OT",
@@ -19,10 +19,10 @@
     "delta_hall": 1.0,
     "Ma": 1.0,
     "Ms": 1.0,
-    "gamma": 1.66666666666,
+    "gamma": 1.4,
 
     "ideal": false,
     "hall": false,
-    "CFL": 0.4
+    "CFL": 0.1
 }
         

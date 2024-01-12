@@ -1,6 +1,7 @@
 from typing import List
 
 import taichi as ti
+from src.common.matrix_ops import get_mat_col
 from src.problem.configs import ProblemConfig
 from src.reconstruction.reconstructors import (
     FirstOrder,
@@ -12,6 +13,14 @@ from src.reconstruction.reconstructors import (
 from src.common.types import *
 from src.flux.flux import MagneticFlux, MomentumFlux, RhoFlux
 from src.flux.solvers import HLLDSolver, RoeSolver, Solver
+from src.spatial_diff.diff_fv import (
+    V_plus_sc_2D,
+    V_plus_vec7_2D,
+    V_plus_vec_2D,
+    get_dx_st_2D,
+    grad_vec_2D,
+    rot_vec_2D,
+)
 
 
 @ti.data_oriented
@@ -49,9 +58,13 @@ class Problem:
         ]
 
         self.solvers: List[Solver] = [
-            # HLLDSolver(self.rho_computer, self.u_computer, self.B_computer, axis)
-            RoeSolver(self.rho_computer, self.u_computer, self.B_computer, axis)
+            HLLDSolver(self.rho_computer, self.u_computer, self.B_computer, axis)
+            # RoeSolver(self.rho_computer, self.u_computer, self.B_computer, axis)
             for axis in self.cfg.dim
+        ]
+
+        self.get_flux_right: List[ti.func] = [
+            self.get_flux_right(axis) for axis in self.cfg.dim
         ]
 
     def update_data(self, rho, p, u, B):
@@ -89,9 +102,9 @@ class Problem:
     def q_b(self, idx):
         return self.B[idx]
 
-    @ti.func
-    def v_rho(self, idx):
-        return self.rho[idx]
+    # @ti.func
+    # def v_rho(self, idx):
+    #     return self.rho[idx]
 
     @ti.func
     def v_u(self, idx):
@@ -100,6 +113,22 @@ class Problem:
     @ti.func
     def v_b(self, idx):
         return self.B[idx]
+
+    @ti.func
+    def grad_U(self, idx):
+        return grad_vec_2D(self.v_u, self.cfg.h, idx)
+
+    @ti.func
+    def grad_B(self, idx):
+        return grad_vec_2D(self.v_b, self.cfg.h, idx)
+
+    @ti.func
+    def rot_U(self, idx):
+        return rot_vec_2D(self.v_u, self.cfg.h, idx)
+
+    @ti.func
+    def rot_B(self, idx):
+        return rot_vec_2D(self.v_b, self.cfg.h, idx)
 
     @ti.func
     def get_s_j_max(self, idx):
@@ -128,14 +157,44 @@ class Problem:
 
         return vec3([res_x, res_y, res_z])
 
-    @ti.func
-    def get_flux_right(self, idx_l, idx_r, axis_idx):
-        result = self.solvers[0].get_conv(q_l=self.q(idx_l), q_r=self.q(idx_r))
-        if ti.static(len(self.solvers) > 1):
-            if axis_idx == 1:
-                result = self.solvers[1].get_conv(q_l=self.q(idx_l), q_r=self.q(idx_r))
-        if ti.static(len(self.solvers) > 2):
-            if axis_idx == 2:
-                result = self.solvers[2].get_conv(q_l=self.q(idx_l), q_r=self.q(idx_r))
+    def get_flux_right(self, axis_idx):
+        @ti.func
+        def _get_flux_right(idx_l, idx_r):
+            result = self.solvers[axis_idx].get_conv(
+                q_l=self.q(idx_l), q_r=self.q(idx_r)
+            )
 
-        return result
+            # if ti.static(len(self.solvers) > 1):
+            #     if axis_idx == 1:
+            #         result = self.solvers[1].get_conv(
+            #             q_l=self.q(idx_l), q_r=self.q(idx_r)
+            #         )
+
+            # if ti.static(len(self.solvers) > 2):
+            #     if axis_idx == 2:
+            #         result = self.solvers[2].get_conv(
+            #             q_l=self.q(idx_l), q_r=self.q(idx_r)
+            #         )
+
+            # for j, k in ti.ndrange(2, 2):
+            #     corner = (
+            #         idx_l - vec3i([1, 1, 0]) + get_dx_st_2D(axis_idx, j, k, left=False)
+            #     )
+            #     v = V_plus_vec7_2D(self.v, corner)
+
+            #     gradU = self.grad_U(corner)
+            #     gradB = self.grad_B(corner)
+
+            #     result[1:4] -= 0.25 * get_mat_col(
+            #         self.u_computer.flux_viscous(v, gradU, gradB),
+            #         axis_idx,
+            #     )
+
+            #     result[4:] -= 0.25 * get_mat_col(
+            #         self.B_computer.flux_viscous(v, gradU, gradB),
+            #         axis_idx,
+            #     )
+
+            return result
+
+        return _get_flux_right

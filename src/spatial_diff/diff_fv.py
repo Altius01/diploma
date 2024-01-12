@@ -313,3 +313,73 @@ def rot_vec_3D(foo: ti.template(), h: ti.template(), idx):
         )
 
     return result
+
+
+@ti.func
+def V_plus_vec_1D(foo: ti.template(), idx):
+    result = vec3(0)
+
+    for i in ti.ndrange(2):
+        new_idx = idx + vec3i([i, 0, 0])
+        result += foo(new_idx)
+    return result / 2.0
+
+
+@ti.func
+def V_plus_vec_2D(foo: ti.template(), idx):
+    result = vec3(0)
+
+    for i, j in ti.ndrange(2, 2):
+        new_idx = idx + vec3i([i, j, 0])
+        result += foo(new_idx)
+    return result / 4.0
+
+
+@ti.func
+def V_plus_vec7_2D(foo: ti.template(), idx):
+    result = vec7(0)
+
+    for i, j in ti.ndrange(2, 2):
+        new_idx = idx + vec3i([i, j, 0])
+        result += foo(new_idx)
+    return result / 4.0
+
+
+@ti.func
+def V_plus_vec_3D(foo: ti.template(), idx):
+    result = vec3(0)
+
+    for i, j, k in ti.ndrange(2, 2, 2):
+        new_idx = idx + vec3i([i, j, k])
+        result += foo(new_idx)
+    return result / 8.0
+
+
+@ti.func
+def V_plus_sc_1D(foo: ti.template(), idx):
+    result = double(0.0)
+
+    for i in ti.ndrange(2):
+        new_idx = idx + vec3i([i, 0, 0])
+        result += foo(new_idx)
+    return result / 2.0
+
+
+@ti.func
+def V_plus_sc_2D(foo: ti.template(), idx):
+    result = double(0.0)
+
+    for i, j in ti.ndrange(2, 2):
+        new_idx = idx + vec3i([i, j, 0])
+        result += foo(new_idx)
+    return result / 4.0
+
+
+@ti.func
+def V_plus_sc_3D(foo: ti.template(), idx):
+    result = double(0.0)
+
+    for i, j, k in ti.ndrange(2, 2, 2):
+        new_idx = idx + vec3i([i, j, k])
+        result += foo(new_idx)
+    return result / 8.0
