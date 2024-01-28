@@ -113,13 +113,13 @@ def get_elem_3d(arr: ti.template(), idx):
     return result
 
 
-# @ti.func
-# def get_elem(arr: ti.template(), idx) -> double:
-#     idx_len = ti.static(static_get_len(idx))
+@ti.func
+def get_elem(arr: ti.template(), idx) -> double:
+    idx_len = ti.static(static_get_len(idx))
 
-#     if ti.static(idx_len==1):
-#         return get_elem_1d(arr, idx)
-#     elif ti.static(idx_len==2):
-#         return get_elem_2d(arr, idx)
-#     elif ti.static(idx_len==3):
-#         return get_elem_3d(arr, idx)
+    if ti.static(idx_len == 1):
+        return get_elem_1d(arr, idx)
+    elif ti.static(idx_len == 2):
+        return get_elem_2d(arr, idx)
+    elif ti.static(idx_len == 3):
+        return get_elem_3d(arr, idx)

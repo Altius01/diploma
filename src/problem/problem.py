@@ -176,24 +176,21 @@ class Problem:
             #             q_l=self.q(idx_l), q_r=self.q(idx_r)
             #         )
 
-            # for j, k in ti.ndrange(2, 2):
-            #     corner = (
-            #         idx_l - vec3i([1, 1, 0]) + get_dx_st_2D(axis_idx, j, k, left=False)
-            #     )
-            #     v = V_plus_vec7_2D(self.v, corner)
+            corner = idx_l
+            v = self.v(corner)
 
-            #     gradU = self.grad_U(corner)
-            #     gradB = self.grad_B(corner)
+            gradU = self.grad_U(corner)
+            gradB = self.grad_B(corner)
 
-            #     result[1:4] -= 0.25 * get_mat_col(
-            #         self.u_computer.flux_viscous(v, gradU, gradB),
-            #         axis_idx,
-            #     )
+            result[1:4] -= get_mat_col(
+                self.u_computer.flux_viscous(v, gradU, gradB),
+                axis_idx,
+            )
 
-            #     result[4:] -= 0.25 * get_mat_col(
-            #         self.B_computer.flux_viscous(v, gradU, gradB),
-            #         axis_idx,
-            #     )
+            result[4:] -= get_mat_col(
+                self.B_computer.flux_viscous(v, gradU, gradB),
+                axis_idx,
+            )
 
             return result
 

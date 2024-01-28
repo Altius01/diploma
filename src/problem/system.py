@@ -134,7 +134,7 @@ class System(BaseSystem):
 
         self.ghosts_periodic(self.B[0], 0)
 
-        self.computeP(self.p[0], self.get_E)
+        self.computeP(self.p[0], self.get_B0)
 
         self.ghosts_periodic(self.u[0], 0)
         self.ghosts_periodic(self.rho[0], 0)

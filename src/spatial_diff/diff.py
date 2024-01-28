@@ -1,5 +1,6 @@
 import numpy as np
 import taichi as ti
+from src.common.pointers import get_elem
 
 from src.common.types import *
 import src.common.matrix_ops as mat_ops

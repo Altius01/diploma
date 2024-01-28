@@ -93,7 +93,7 @@ class BaseSystem:
                 self.rho[0].to_numpy(),
                 self.p[0].to_numpy(),
                 self.B_staggered[0].to_numpy(),
-                self.E.to_numpy(),
+                self.u[0].to_numpy(),
             ),
         )
         Logger.log(
@@ -263,7 +263,7 @@ class BaseSystem:
             self.current_step % self.config.rw_del != 0
         ):
             dT = self.get_cfl()
-            print(f"CFL dT: {dT}")
+            # print(f"CFL dT: {dT}")
 
             self.current_time += dT
             self.current_step += 1
@@ -277,7 +277,7 @@ class BaseSystem:
                     :,
                 ]
             )
-            print(f"Mean divB: {mean_div}")
+            # print(f"Mean divB: {mean_div}")
 
             if self.current_step % self.config.rw_del == 0:
                 self.save_file(self.current_step)
